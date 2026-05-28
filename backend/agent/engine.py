@@ -67,49 +67,48 @@ class AgentEngine:
             "content": user_message
         })
 
-        response = client.chat.completions.create(
-            model=self.model,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                *self.conversation_history
-            ]
-        )
+        for _ in range(5):
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    *self.conversation_history
+                ]
+            )
 
-        reply = response.choices[0].message.content
+            reply = response.choices[0].message.content
 
-        try:
-            json_match = re.search(r'\{.*"tool".*\}', reply, re.DOTALL)
-            if json_match:
-                tool_call = json.loads(json_match.group())
-                if "tool" in tool_call:
-                    tool_output = self.execute_tool(
-                        tool_call["tool"],
-                        tool_call.get("args", {})
-                    )
-                    self.conversation_history.append({
-                        "role": "assistant",
-                        "content": reply
-                    })
-                    self.conversation_history.append({
-                        "role": "user",
-                        "content": f"Tool result: {tool_output}"
-                    })
-                    final = client.chat.completions.create(
-                        model=self.model,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            *self.conversation_history
-                        ]
-                    )
-                    reply = final.choices[0].message.content
-        except (json.JSONDecodeError, KeyError):
-            pass
+            try:
+                json_match = re.search(r'\{.*"tool".*\}', reply, re.DOTALL)
+                if json_match:
+                    tool_call = json.loads(json_match.group())
+                    if "tool" in tool_call:
+                        tool_output = self.execute_tool(
+                            tool_call["tool"],
+                            tool_call.get("args", {})
+                        )
+                        self.conversation_history.append({
+                            "role": "assistant",
+                            "content": reply
+                        })
+                        self.conversation_history.append({
+                            "role": "user",
+                            "content": f"Tool result: {tool_output}"
+                        })
+                        continue
+            except (json.JSONDecodeError, KeyError):
+                pass
+
+            self.conversation_history.append({
+                "role": "assistant",
+                "content": reply
+            })
+            return reply
 
         self.conversation_history.append({
             "role": "assistant",
             "content": reply
         })
-
         return reply
 
     def reset(self):
