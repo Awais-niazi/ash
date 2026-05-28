@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from groq import Groq
 from dotenv import load_dotenv
@@ -26,12 +27,13 @@ You have access to the following tools:
 - read_file(file_path): Read a file
 - write_file(file_path, content): Write to a file
 
-When you need to use a tool, respond with a JSON block like this:
+When you need to use a tool, respond ONLY with a JSON block like this:
 {"tool": "git_status", "args": {"repo_path": "/path/to/repo"}}
 
-Otherwise respond normally in plain text.
+Do not include any other text when calling a tool.
 Always explain what you are about to do before doing it.
 """
+
 
 class AgentEngine:
     def __init__(self):
@@ -73,32 +75,32 @@ class AgentEngine:
 
         reply = response.choices[0].message.content
 
-        # Check if reply contains a tool call
+        # Extract JSON tool call even if embedded in text
         try:
-            tool_call = json.loads(reply)
-            if "tool" in tool_call:
-                tool_result = self.execute_tool(
-                    tool_call["tool"],
-                    tool_call.get("args", {})
-                )
-                # Feed result back to Ash
-                self.conversation_history.append({
-                    "role": "assistant",
-                    "content": reply
-                })
-                self.conversation_history.append({
-                    "role": "user",
-                    "content": f"Tool result: {tool_result}"
-                })
-                # Get final response
-                final = client.chat.completions.create(
-                    model=self.model,
-                    messages=[
-                        {"role": "system", "content": SYSTEM_PROMPT},
-                        *self.conversation_history
-                    ]
-                )
-                reply = final.choices[0].message.content
+            json_match = re.search(r'\{.*"tool".*\}', reply, re.DOTALL)
+            if json_match:
+                tool_call = json.loads(json_match.group())
+                if "tool" in tool_call:
+                    tool_output = self.execute_tool(
+                        tool_call["tool"],
+                        tool_call.get("args", {})
+                    )
+                    self.conversation_history.append({
+                        "role": "assistant",
+                        "content": reply
+                    })
+                    self.conversation_history.append({
+                        "role": "user",
+                        "content": f"Tool result: {tool_output}"
+                    })
+                    final = client.chat.completions.create(
+                        model=self.model,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            *self.conversation_history
+                        ]
+                    )
+                    reply = final.choices[0].message.content
         except (json.JSONDecodeError, KeyError):
             pass
 

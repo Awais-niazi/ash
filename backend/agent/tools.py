@@ -79,3 +79,10 @@ def write_file(file_path: str, content: str) -> dict:
         return {"success": True, "output": f"Written to {file_path}"}
     except Exception as e:
         return {"success": False, "output": str(e)}
+    
+
+def git_add(repo_path: str, files: str = ".") -> dict:
+    """Stage files for commit."""
+    if isinstance(files, list):
+        files = " ".join(files)
+    return run_command(f"git -C {repo_path} add {files}")    
