@@ -30,6 +30,8 @@ You have access to the following tools:
 When you need to use a tool, respond ONLY with a JSON block like this:
 {"tool": "git_status", "args": {"repo_path": "/path/to/repo"}}
 
+The default repo path is always /home/awais-faiz/Dev/ASH unless the user specifies otherwise.
+Only call ONE tool at a time. Wait for the result before calling the next tool.
 Do not include any other text when calling a tool.
 Always explain what you are about to do before doing it.
 """
@@ -75,7 +77,6 @@ class AgentEngine:
 
         reply = response.choices[0].message.content
 
-        # Extract JSON tool call even if embedded in text
         try:
             json_match = re.search(r'\{.*"tool".*\}', reply, re.DOTALL)
             if json_match:
