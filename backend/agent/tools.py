@@ -48,7 +48,20 @@ def git_add(repo_path: str, files: str = ".") -> dict:
 
 def git_commit(repo_path: str, message: str) -> dict:
     """Commit staged changes."""
-    return run_command(f"git -C {repo_path} commit -m {message}")
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["git", "-C", repo_path, "commit", "-m", message],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        return {
+            "success": result.returncode == 0,
+            "output": result.stdout or result.stderr
+        }
+    except Exception as e:
+        return {"success": False, "output": str(e)}
 
 
 def git_push(repo_path: str, branch: str = "main") -> dict:
