@@ -3,6 +3,7 @@ import re
 import json
 from groq import Groq
 from dotenv import load_dotenv
+from django.utils import timezone
 from . import tools
 
 load_dotenv()
@@ -67,6 +68,28 @@ IMPORTANT RULES:
 """ + PERSONALITY_CONTEXT
 
 
+def classify_memory_type(key: str, value: str) -> str:
+    key_lower = key.lower()
+    if any(w in key_lower for w in ["deadline", "schedule", "date", "time", "reminder", "when"]):
+        return "temporal"
+    if any(w in key_lower for w in ["how to", "steps", "process", "procedure", "workflow"]):
+        return "procedural"
+    if any(w in key_lower for w in ["happened", "did", "was", "event", "conversation"]):
+        return "episodic"
+    return "semantic"
+
+
+def assess_risk(tool_name: str, args: dict) -> float:
+    high_risk = ["git_push", "run_command"]
+    medium_risk = ["git_commit", "git_create_branch", "write_file"]
+    low_risk = ["git_status", "git_add", "read_file"]
+    if tool_name in high_risk:
+        return 0.8
+    if tool_name in medium_risk:
+        return 0.5
+    return 0.2
+
+
 class AgentEngine:
     def __init__(self, user=None):
         self.model = "llama-3.3-70b-versatile"
@@ -79,14 +102,36 @@ class AgentEngine:
         if user:
             self._load_memories()
             self._load_last_conversation()
+            self._cleanup_expired_memories()
+
+    def _cleanup_expired_memories(self):
+        try:
+            from .models import Memory
+            expired = Memory.objects.filter(
+                user=self.user,
+                expires_at__lt=timezone.now()
+            )
+            if expired.count() > 0:
+                expired.delete()
+        except Exception:
+            pass
 
     def _load_memories(self):
         try:
             from .models import Memory
-            memories = Memory.objects.filter(user=self.user)
+            memories = Memory.objects.filter(
+                user=self.user,
+                confidence_score__gte=0.2
+            ).order_by('-confidence_score', '-last_accessed')[:30]
+
             if memories.exists():
-                memory_text = "\n".join([f"- {m.key}: {m.value}" for m in memories])
-                self.memory_context = f"\nAdditional things you remember about this user:\n{memory_text}\n"
+                memory_lines = []
+                for m in memories:
+                    stars = "★" * round(m.confidence_score * 5)
+                    memory_lines.append(f"- [{m.memory_type}] {m.key}: {m.value} {stars}")
+                self.memory_context = "\nWhat you remember about this user (★ = confidence):\n" + "\n".join(memory_lines) + "\n"
+                for m in memories:
+                    m.reinforce(0.02)
         except Exception:
             self.memory_context = ""
 
@@ -98,7 +143,7 @@ class AgentEngine:
                 self.conversation = last_conv
                 messages = Message.objects.filter(
                     conversation=last_conv
-                ).order_by("-created_at")[:self.max_history]
+                ).order_by('-created_at')[:self.max_history]
                 self.conversation_history = [
                     {"role": m.role, "content": m.content}
                     for m in reversed(messages)
@@ -107,14 +152,35 @@ class AgentEngine:
             self.conversation_history = []
 
     def _save_message(self, role: str, content: str):
+        """Save a message to the database."""
         try:
             from .models import Conversation, Message
             if not self.conversation:
-                self.conversation = Conversation.objects.create(user=self.user)
+                if self.user:
+                    existing = Conversation.objects.filter(user=self.user).first()
+                    if existing:
+                        self.conversation = existing
+                    else:    
+                        self.conversation = Conversation.objects.create(user=self.user)
+                else:
+                    return        
             Message.objects.create(
                 conversation=self.conversation,
                 role=role,
                 content=content
+            )
+        except Exception as e:
+            print(f"Save message error: {e}")
+
+    def _save_decision(self, tool_name: str, args: dict, risk_score: float, outcome: str):
+        try:
+            from .models import AutonomousDecision
+            AutonomousDecision.objects.create(
+                user=self.user,
+                context={"conversation_length": len(self.conversation_history)},
+                decision_made={"tool": tool_name, "args": args},
+                risk_score=risk_score,
+                outcome=outcome
             )
         except Exception:
             pass
@@ -126,42 +192,65 @@ class AgentEngine:
                 return
             memory_triggers = {
                 "my name is": "user_name",
-                "i am": "user_description",
                 "i work on": "user_project",
                 "i prefer": "user_preference",
                 "i built you": "creator",
                 "you were created by": "creator",
                 "call you": "user_nickname",
-                "your other name": "user_nickname",
                 "i live in": "user_location",
                 "i'm moving to": "user_future_location",
                 "remind me to": "user_reminder",
+                "i like": "user_preference",
+                "i hate": "user_dislike",
+                "my goal is": "user_goal",
+                "i'm studying": "user_study",
+                "i'm learning": "user_learning",
             }
             text_lower = text.lower()
             for trigger, key in memory_triggers.items():
                 if trigger in text_lower:
                     idx = text_lower.find(trigger)
                     value = text[idx:idx+150].strip()
+                    memory_type = classify_memory_type(key, value)
                     Memory.objects.update_or_create(
                         user=self.user,
                         key=key,
-                        defaults={"value": value}
+                        defaults={
+                            "value": value,
+                            "memory_type": memory_type,
+                            "confidence_score": 0.7
+                        }
                     )
         except Exception:
             pass
 
     def _auto_summarize(self):
         try:
-            from .models import Memory
-            user_messages = [m for m in self.conversation_history if m["role"] == "user"]
-            if len(user_messages) == 0 or len(user_messages) % 5 != 0:
+            from .models import Memory, Message
+
+            if self.conversation:
+                total_user_msgs = Message.objects.filter(
+                    conversation=self.conversation,
+                    role='user'
+                ).count()
+            else:
+                total_user_msgs = len([m for m in self.conversation_history if m["role"] == "user"])
+
+            if total_user_msgs == 0 or total_user_msgs % 3 != 0:
                 return
-            summary_prompt = """Read this conversation and extract any important personal facts about the user.
-Return ONLY a JSON object where keys are fact names and values are the facts.
-Only include genuinely new and useful information.
-Example: {"user_hobby": "loves hiking", "user_deadline": "thesis due June 2026"}
-If nothing important was shared, return an empty object: {}
-Do not include any other text, just the JSON."""
+
+            summary_prompt = """Read this conversation and extract important personal facts about the user.
+Return ONLY a JSON object like this:
+{
+  "fact_key": {
+    "value": "the fact itself",
+    "type": "semantic|episodic|procedural|temporal",
+    "confidence": 0.8
+  }
+}
+Only include genuinely useful facts. If nothing important, return {}.
+No other text, just JSON."""
+
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[
@@ -170,19 +259,38 @@ Do not include any other text, just the JSON."""
                 ],
                 max_tokens=500
             )
+
             raw = response.choices[0].message.content.strip()
             raw = re.sub(r"```json|```", "", raw).strip()
             facts = json.loads(raw)
+
             if not facts or not isinstance(facts, dict):
                 return
-            for key, value in facts.items():
-                if key and value:
+
+            for key, data in facts.items():
+                if isinstance(data, dict) and "value" in data:
                     Memory.objects.update_or_create(
                         user=self.user,
                         key=key,
-                        defaults={"value": str(value)}
+                        defaults={
+                            "value": str(data["value"]),
+                            "memory_type": data.get("type", "semantic"),
+                            "confidence_score": float(data.get("confidence", 0.6))
+                        }
                     )
+                elif isinstance(data, str):
+                    Memory.objects.update_or_create(
+                        user=self.user,
+                        key=key,
+                        defaults={
+                            "value": data,
+                            "memory_type": "semantic",
+                            "confidence_score": 0.6
+                        }
+                    )
+
             self._load_memories()
+
         except Exception:
             pass
 
@@ -212,9 +320,12 @@ Do not include any other text, just the JSON."""
         if self.user:
             self._save_message("user", user_message)
             self._auto_summarize()
+
         if len(self.conversation_history) > self.max_history:
             self.conversation_history = self.conversation_history[-self.max_history:]
+
         full_system_prompt = SYSTEM_PROMPT + self.memory_context
+
         for _ in range(5):
             response = client.chat.completions.create(
                 model=self.model,
@@ -223,16 +334,20 @@ Do not include any other text, just the JSON."""
                     *self.conversation_history
                 ]
             )
+
             reply = response.choices[0].message.content
+
             try:
                 json_match = re.search(r'\{.*"tool".*\}', reply, re.DOTALL)
                 if json_match:
                     tool_call = json.loads(json_match.group())
                     if "tool" in tool_call:
-                        tool_output = self.execute_tool(
-                            tool_call["tool"],
-                            tool_call.get("args", {})
-                        )
+                        tool_name = tool_call["tool"]
+                        tool_args = tool_call.get("args", {})
+                        risk = assess_risk(tool_name, tool_args)
+                        if self.user:
+                            self._save_decision(tool_name, tool_args, risk, "success")
+                        tool_output = self.execute_tool(tool_name, tool_args)
                         self.conversation_history.append({
                             "role": "assistant",
                             "content": reply
@@ -246,6 +361,7 @@ Do not include any other text, just the JSON."""
                         continue
             except (json.JSONDecodeError, KeyError):
                 pass
+
             self.conversation_history.append({
                 "role": "assistant",
                 "content": reply
@@ -253,6 +369,7 @@ Do not include any other text, just the JSON."""
             if self.user:
                 self._save_message("assistant", reply)
             return reply
+
         self.conversation_history.append({
             "role": "assistant",
             "content": reply
