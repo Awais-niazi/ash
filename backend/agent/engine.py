@@ -44,6 +44,9 @@ You have access to the following tools:
 - git_create_branch(repo_path, branch_name): Create a new branch
 - read_file(file_path): Read a file
 - write_file(file_path, content): Write to a file
+- web_search(query): Search the web for current information
+- get_weather(location): Get current weather for any location
+- get_news(topic): Get latest news on any topic
 
 When you need to use a tool, respond ONLY with a JSON block like this:
 {"tool": "git_status", "args": {"repo_path": "/path/to/repo"}}
@@ -377,6 +380,9 @@ No other text, just JSON."""
             "git_create_branch": tools.git_create_branch,
             "read_file": tools.read_file,
             "write_file": tools.write_file,
+            "web_search": tools.web_search,
+            "get_weather": tools.get_weather,
+            "get_news": tools.get_news,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:

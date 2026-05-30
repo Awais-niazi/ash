@@ -99,3 +99,42 @@ def git_add(repo_path: str, files: str = ".") -> dict:
     if isinstance(files, list):
         files = " ".join(files)
     return run_command(f"git -C {repo_path} add {files}")    
+
+def web_search(query: str) -> dict:
+    """Search the web for current information."""
+    try:
+        from tavily import TavilyClient
+        import os
+        client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+        response = client.search(query=query, max_results=5)
+        
+        results = []
+        for r in response.get("results", []):
+            results.append({
+                "title": r.get("title", ""),
+                "url": r.get("url", ""),
+                "content": r.get("content", "")[:300]
+            })
+        
+        if not results:
+            return {"success": False, "output": "No results found"}
+        
+        formatted = f"Search results for '{query}':\n\n"
+        for i, r in enumerate(results, 1):
+            formatted += f"{i}. {r['title']}\n"
+            formatted += f"   {r['content']}\n"
+            formatted += f"   Source: {r['url']}\n\n"
+        
+        return {"success": True, "output": formatted}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def get_weather(location: str) -> dict:
+    """Get current weather for a location using web search."""
+    return web_search(f"current weather in {location} today temperature")
+
+
+def get_news(topic: str) -> dict:
+    """Get latest news on a topic."""
+    return web_search(f"latest news {topic} 2026")
