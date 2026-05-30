@@ -310,6 +310,63 @@ No other text, just JSON."""
         except Exception:
             pass
 
+    def _force_summarize(self):
+        """Immediately extract facts from a long message regardless of count."""    
+        try:
+            from .models import Memory
+            summary_prompt = """Read this conversation and extract important personal facts about the user.
+Return ONLY a JSON object like this:
+{
+  "fact_key": {
+    "value": "the fact itself",
+    "type": "semantic|episodic|procedural|temporal",
+    "confidence": 0.8
+  }
+}
+Only include genuinely useful facts. If nothing important, return {}.  
+No other text, just JSON."""
+            
+            response = client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": summary_prompt},
+                    *self.conversation_history[-6:]
+                ],
+                max_tokens=500
+            )
+            raw = response.choices[0].message.content.strip()
+            raw = re.sub(r"```json|```", "", raw).strip()
+            facts = json.loads(raw)
+
+            if not facts or not isinstance(facts, dict):
+                return
+            
+            for key, data in facts.items():
+                if isinstance(data, dict) and "value" in data:
+                    Memory.objects.update_or_create(
+                        user=self.user,
+                        key=key,
+                        defaults={
+                            "value": str(data["value"]),
+                            "memory_type": data.get("type", "semantic"),
+                            "confidence_score": float(data.get("confidence", 0.6))
+                        }
+                    )
+                elif isinstance(data, str):
+                    Memory.objects.update_or_create(
+                        user=self.user,
+                        key=key,
+                        defaults={
+                            "value": data,
+                            "memory_type": "semantic",
+                            "confidence_score": 0.6
+                        }
+                    )
+            self._load_memories()
+        except Exception:
+            pass         
+   
+
     def execute_tool(self, tool_name: str, args: dict) -> str:
         tool_map = {
             "run_command": tools.run_command,
@@ -336,6 +393,8 @@ No other text, just JSON."""
         if self.user:
             self._save_message("user", user_message)
             self._auto_summarize()
+            if len(user_message) > 150:
+                self._force_summarize()
 
         if len(self.conversation_history) > self.max_history:
             self.conversation_history = self.conversation_history[-self.max_history:]
