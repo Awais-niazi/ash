@@ -58,7 +58,8 @@ export default function App() {
     return (
       <div className="login-container">
         <div className="login-box">
-          <h1>🤖 Ash</h1>
+          <img src="/Ash.jpeg" alt="Ash" className="ash-avatar-login" />
+          <h1>Ash</h1>
           <p>Your AI Personal Operating System</p>
           <form onSubmit={handleLogin}>
             <input
@@ -84,7 +85,10 @@ export default function App() {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <h2>🤖 Ash</h2>
+        <div className="ash-header-info">
+          <img src="/Ash.jpeg" alt="Ash" className="ash-avatar-header" />
+          <h2>Ash</h2>
+        </div>
         <button onClick={handleReset} className="reset-btn">
           New Chat
         </button>
