@@ -24,8 +24,9 @@ def load_personality() -> str:
 
 
 PERSONALITY_CONTEXT = load_personality()
+ASH_REPO_PATH = os.getenv('ASH_REPO_PATH', '/home/awais-faiz/Dev/ASH')
 
-SYSTEM_PROMPT = """
+SYSTEM_PROMPT = f"""
 You are Ash, an AI-powered personal operating system built by Awais Niazi.
 You help the user execute tasks on their server including:
 - Writing and editing code
@@ -49,7 +50,7 @@ You have access to the following tools:
 - get_news(topic): Get latest news on any topic
 
 When you need to use a tool, respond ONLY with a JSON block like this:
-{"tool": "git_status", "args": {"repo_path": "/path/to/repo"}}
+{{"tool": "git_status", "args": {{"repo_path": "/path/to/repo"}}}}
 
 The default repo path is always /home/awais-faiz/Dev/ASH unless the user specifies otherwise.
 Only call ONE tool at a time. Wait for the result before calling the next tool.
