@@ -101,3 +101,42 @@ Instructions:
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+        
+
+class SpeakView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        try:
+            from gtts import gTTS
+            from django.http import HttpResponse
+            import io
+
+            text = request.data.get("text", "")
+            if not text:
+                return Response({"error": "No text provided"}, status=400)
+
+            text = text[:2000]
+
+            tts = gTTS(text=text, lang='en', slow=False)
+            audio_buffer = io.BytesIO()
+            tts.write_to_fp(audio_buffer)
+            audio_buffer.seek(0)
+
+            return HttpResponse(
+                audio_buffer.read(),
+                content_type="audio/mpeg"
+            )
+
+        except Exception as e:
+            traceback.print_exc()
+            error_msg = str(e)
+            if "rate_limit" in error_msg.lower() or "429" in error_msg:
+                return Response(
+                    {"error": "Ash is taking a short break. Try again in a few minutes."},
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE
+                )
+            return Response(
+                {"error": error_msg},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )

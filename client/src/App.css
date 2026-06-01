@@ -248,3 +248,52 @@ body {
   color: #666;
   cursor: not-allowed;
 }
+
+.header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.stop-btn {
+  background: #2a2a2a;
+  color: #aaa;
+  border: 1px solid #333;
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+}
+
+.stop-btn:hover {
+  background: #444;
+  color: #fff;
+}
+
+.briefing-loading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.pulse {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #6c63ff;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.4; transform: scale(0.8); }
+}
+
+.message.briefing pre {
+  background: linear-gradient(135deg, #1a1a2e, #16213e);
+  border: 1px solid #6c63ff44;
+  border-left: 3px solid #6c63ff;
+}
