@@ -123,3 +123,40 @@ class ScheduledTask(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — {self.name} ({self.cron_schedule})"
+    
+class Task(models.Model):
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+        ('urgent', 'Urgent'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, null=True)
+    priority = models.CharField(max_length=10, choices=PRIORITY_CHOICES, default='medium')
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    deadline = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-priority', 'deadline', '-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} — {self.title} [{self.priority}]"
+
+    def is_overdue(self):
+        from django.utils import timezone
+        if self.deadline and self.status == 'pending':
+            return timezone.now() > self.deadline
+        return False    

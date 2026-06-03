@@ -79,7 +79,7 @@ class MorningBriefingView(APIView):
     def get(self, request):
         try:
             from agent.tools import get_weather, get_news
-            from agent.models import Memory
+            from agent.models import Memory, Task
 
             weather = get_weather("Lahore Pakistan")
             news = get_news("world news today")
@@ -88,6 +88,21 @@ class MorningBriefingView(APIView):
                 user=request.user
             ).order_by('-confidence_score')[:5]
             memory_text = "\n".join([f"- {m.key}: {m.value}" for m in memories])
+
+            # Get pending tasks
+            tasks = Task.objects.filter(
+                user=request.user,
+                status='pending'
+            ).order_by('deadline', '-priority')[:10]
+
+            if tasks.exists():
+                task_text = "PENDING TASKS:\n"
+                for task in tasks:
+                    deadline_str = f" (due {task.deadline.strftime('%b %d')})" if task.deadline else ""
+                    overdue = " OVERDUE" if task.is_overdue() else ""
+                    task_text += f"- [{task.priority.upper()}] {task.title}{deadline_str}{overdue}\n"
+            else:
+                task_text = "PENDING TASKS:\nNo pending tasks."
 
             briefing_prompt = f"""Generate a warm morning briefing for Awais. Use this real data:
 
@@ -100,11 +115,13 @@ NEWS:
 WHAT YOU KNOW ABOUT AWAIS:
 {memory_text}
 
+{task_text}
+
 Instructions:
 - Warm personal greeting
 - Summarize the weather in 1 sentence
 - Give top 3 news headlines
-- Mention any tasks deadlines or reminders from memory
+- Mention pending tasks and any overdue ones
 - End with a motivational thought
 - Keep it concise and friendly
 - Speak directly to Awais
@@ -131,7 +148,6 @@ Instructions:
                 {"error": error_msg},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class SpeakView(APIView):
     permission_classes = [IsAuthenticated]

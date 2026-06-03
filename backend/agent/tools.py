@@ -138,3 +138,138 @@ def get_weather(location: str) -> dict:
 def get_news(topic: str) -> dict:
     """Get latest news on a topic."""
     return web_search(f"latest news {topic} 2026")
+
+
+def get_tasks(user_id: int, status: str = 'pending') -> dict:
+    """Get tasks for a user."""
+    try:
+        import django
+        from django.contrib.auth.models import User
+        from agent.models import Task
+        from django.utils import timezone
+
+        user = User.objects.get(id=user_id)
+        tasks = Task.objects.filter(user=user, status=status).order_by('deadline', '-priority')
+
+        if not tasks.exists():
+            return {"success": True, "output": f"No {status} tasks found."}
+
+        result = f"Your {status} tasks:\n\n"
+        for i, task in enumerate(tasks, 1):
+            deadline_str = ""
+            overdue_str = ""
+            if task.deadline:
+                deadline_str = f" | Due: {task.deadline.strftime('%b %d, %Y')}"
+                if task.is_overdue():
+                    overdue_str = " ⚠️ OVERDUE"
+            result += f"{i}. [{task.priority.upper()}] {task.title}{deadline_str}{overdue_str}\n"
+            if task.description:
+                result += f"   {task.description}\n"
+            result += f"   ID: {task.id}\n\n"
+
+        return {"success": True, "output": result}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def add_task(user_id: int, title: str, description: str = "", priority: str = "medium", deadline: str = None) -> dict:
+    """Add a new task for a user."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import Task
+        from django.utils import timezone
+        from datetime import datetime
+
+        user = User.objects.get(id=user_id)
+
+        deadline_dt = None
+        if deadline:
+            try:
+                deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
+                from django.utils import timezone as tz
+                import pytz
+                deadline_dt = tz.make_aware(deadline_dt)
+            except ValueError:
+                pass
+
+        task = Task.objects.create(
+            user=user,
+            title=title,
+            description=description,
+            priority=priority,
+            deadline=deadline_dt
+        )
+
+        return {
+            "success": True,
+            "output": f"Task added successfully: '{title}' (ID: {task.id}, Priority: {priority})"
+        }
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def complete_task(task_id: int) -> dict:
+    """Mark a task as completed."""
+    try:
+        from agent.models import Task
+        from django.utils import timezone
+
+        task = Task.objects.get(id=task_id)
+        task.status = 'completed'
+        task.completed_at = timezone.now()
+        task.save()
+
+        return {"success": True, "output": f"Task '{task.title}' marked as completed."}
+    except Task.DoesNotExist:
+        return {"success": False, "output": f"Task with ID {task_id} not found."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def delete_task(task_id: int) -> dict:
+    """Delete a task."""
+    try:
+        from agent.models import Task
+        task = Task.objects.get(id=task_id)
+        title = task.title
+        task.delete()
+        return {"success": True, "output": f"Task '{title}' deleted successfully."}
+    except Task.DoesNotExist:
+        return {"success": False, "output": f"Task with ID {task_id} not found."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def update_task(task_id: int, title: str = None, description: str = None, priority: str = None, status: str = None, deadline: str = None) -> dict:
+    """Update an existing task."""
+    try:
+        from agent.models import Task
+        from django.utils import timezone
+        from datetime import datetime
+
+        task = Task.objects.get(id=task_id)
+
+        if title:
+            task.title = title
+        if description:
+            task.description = description
+        if priority:
+            task.priority = priority
+        if status:
+            task.status = status
+            if status == 'completed':
+                task.completed_at = timezone.now()
+        if deadline:
+            try:
+                deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
+                from django.utils import timezone as tz
+                task.deadline = tz.make_aware(deadline_dt)
+            except ValueError:
+                pass
+
+        task.save()
+        return {"success": True, "output": f"Task '{task.title}' updated successfully."}
+    except Task.DoesNotExist:
+        return {"success": False, "output": f"Task with ID {task_id} not found."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}

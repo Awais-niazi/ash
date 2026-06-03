@@ -35,6 +35,11 @@ You help the user execute tasks on their server including:
 - Planning and breaking down complex tasks
 - Organizing tasks and to-dos
 - Helping with travel planning
+- get_tasks(user_id, status): Get tasks (status: pending/completed/all)
+- add_task(user_id, title, description, priority, deadline): Add a new task
+- complete_task(task_id): Mark a task as completed
+- delete_task(task_id): Delete a task
+- update_task(task_id, ...): Update an existing task
 
 You have access to the following tools:
 - run_command(command): Run an allowed shell command
@@ -384,6 +389,11 @@ No other text, just JSON."""
             "web_search": tools.web_search,
             "get_weather": tools.get_weather,
             "get_news": tools.get_news,
+            "get_tasks": tools.get_tasks,
+            "add_task": tools.add_task,
+            "complete_task": tools.complete_task,
+            "delete_task": tools.delete_task,
+            "update_task": tools.update_task,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:
@@ -407,6 +417,8 @@ No other text, just JSON."""
             self.conversation_history = self.conversation_history[-self.max_history:]
 
         full_system_prompt = SYSTEM_PROMPT + self.memory_context
+        if self.user:
+            full_system_prompt += f"\nYour user ID is: {self.user.id}. Use this for task operations.\n"
 
         for _ in range(5):
             response = client.chat.completions.create(

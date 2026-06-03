@@ -49,3 +49,5 @@ vine==5.1.0
 wcwidth==0.7.0
 django-ratelimit==4.1.0
 gTTS==2.5.4
+pytz==2026.2
+tavily-python==0.7.25
