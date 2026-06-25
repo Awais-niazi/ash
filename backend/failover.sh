@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PRIMARY_HOST="62.238.1.221"
+PRIMARY_HOST="100.123.230.103"
 PRIMARY_PORT="5432"
 LOCAL_ENV="/home/awais-faiz/Dev/ASH/backend/.env"
 LOG="/home/awais-faiz/Dev/ASH/backend/failover.log"
@@ -24,14 +24,14 @@ switch_to_local() {
 
 switch_to_primary() {
     echo "$(date) — Primary UP. Switching back to Helsinki DB..." >> $LOG
-    sed -i 's/^DB_HOST=.*/DB_HOST=62.238.1.221/' $LOCAL_ENV
+    sed -i 's/^DB_HOST=.*/DB_HOST=100.123.230.103/' $LOCAL_ENV
     echo "$(date) — Switched back to Helsinki DB successfully." >> $LOG
 }
 
 CURRENT_HOST=$(get_current_host)
 
 if check_primary; then
-    if [ "$CURRENT_HOST" != "62.238.1.221" ]; then
+    if [ "$CURRENT_HOST" != "100.123.230.103" ]; then
         switch_to_primary
     fi
 else
