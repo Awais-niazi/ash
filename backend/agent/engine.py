@@ -53,6 +53,9 @@ You have access to the following tools:
 - web_search(query): Search the web for current information
 - get_weather(location): Get current weather for any location
 - get_news(topic): Get latest news on any topic
+- build_assignment(user_id, topic, subject_type, word_count, deadline, title): Autonomously research and write a complete assignment
+- get_assignments(user_id): List all assignments
+- get_assignment_draft(assignment_id, version): Get assignment content
 
 When you need to use a tool, respond ONLY with a JSON block like this:
 {{"tool": "git_status", "args": {{"repo_path": "/path/to/repo"}}}}
@@ -394,6 +397,9 @@ No other text, just JSON."""
             "complete_task": tools.complete_task,
             "delete_task": tools.delete_task,
             "update_task": tools.update_task,
+            "build_assignment": tools.build_assignment,
+            "get_assignments": tools.get_assignments,
+            "get_assignment_draft": tools.get_assignment_draft,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:

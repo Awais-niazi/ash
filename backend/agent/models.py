@@ -159,4 +159,53 @@ class Task(models.Model):
         from django.utils import timezone
         if self.deadline and self.status == 'pending':
             return timezone.now() > self.deadline
-        return False    
+        return False
+
+class Assignment(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+    ]
+
+    SUBJECT_CHOICES = [
+        ('cs', 'Computer Science'),
+        ('humanitarian', 'Humanitarian'),
+        ('other', 'Other'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    title = models.CharField(max_length=255)
+    topic = models.TextField()
+    subject_type = models.CharField(max_length=20, choices=SUBJECT_CHOICES, default='cs')
+    word_count = models.IntegerField(default=1000)
+    deadline = models.DateTimeField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    outline = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.user.username} — {self.title} [{self.status}]"
+
+
+class AssignmentDraft(models.Model):
+    assignment = models.ForeignKey(
+        Assignment,
+        on_delete=models.CASCADE,
+        related_name='drafts'
+    )
+    version = models.IntegerField(default=1)
+    content = models.TextField()
+    word_count_actual = models.IntegerField(default=0)
+    file_path = models.CharField(max_length=500, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-version']
+
+    def __str__(self):
+        return f"{self.assignment.title} — v{self.version}"        

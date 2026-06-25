@@ -273,3 +273,189 @@ def update_task(task_id: int, title: str = None, description: str = None, priori
         return {"success": False, "output": f"Task with ID {task_id} not found."}
     except Exception as e:
         return {"success": False, "output": str(e)}
+    
+
+def build_assignment(user_id: int, topic: str, subject_type: str = "cs", 
+                     word_count: int = 1000, deadline: str = None, 
+                     title: str = None) -> dict:
+    """Autonomously research, outline and write a complete assignment."""
+    try:
+        import os
+        from groq import Groq
+        from django.contrib.auth.models import User
+        from agent.models import Assignment, AssignmentDraft
+        from django.utils import timezone
+        from datetime import datetime
+
+        user = User.objects.get(id=user_id)
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+        if not title:
+            title = f"Assignment — {topic[:50]}"
+
+        # Parse deadline
+        deadline_dt = None
+        if deadline:
+            try:
+                deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
+                deadline_dt = timezone.make_aware(deadline_dt)
+            except ValueError:
+                pass
+
+        # Create assignment record
+        assignment = Assignment.objects.create(
+            user=user,
+            title=title,
+            topic=topic,
+            subject_type=subject_type,
+            word_count=word_count,
+            deadline=deadline_dt,
+            status='in_progress'
+        )
+
+        # Step 1 — Research the topic
+        research = web_search(f"{topic} comprehensive overview key concepts")
+        research_data = research.get('output', '')
+
+        # Step 2 — Generate outline
+        outline_response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{
+                "role": "user",
+                "content": f"""Create a detailed outline for a {word_count} word {subject_type} assignment on: {topic}
+                
+Research context:
+{research_data[:2000]}
+
+Generate a structured outline with:
+- Introduction
+- 4-6 main sections with subsections
+- Conclusion
+- References section
+
+Return only the outline, no other text."""
+            }],
+            max_tokens=1000
+        )
+        outline = outline_response.choices[0].message.content
+
+        # Save outline
+        assignment.outline = outline
+        assignment.save()
+
+        # Step 3 — Write the full assignment section by section
+        writing_response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{
+                "role": "user",
+                "content": f"""Write a complete, well-researched {word_count} word academic assignment on: {topic}
+
+Subject type: {subject_type}
+
+Follow this outline:
+{outline}
+
+Use this research:
+{research_data[:3000]}
+
+Requirements:
+- Academic tone, well structured
+- Each section clearly labeled with ## headings
+- Include relevant examples and explanations
+- Proper introduction and conclusion
+- Aim for exactly {word_count} words
+- Format as Markdown
+
+Write the complete assignment now:"""
+            }],
+            max_tokens=4000
+        )
+
+        content = writing_response.choices[0].message.content
+        actual_word_count = len(content.split())
+
+        # Step 4 — Save draft to database
+        draft = AssignmentDraft.objects.create(
+            assignment=assignment,
+            version=1,
+            content=content,
+            word_count_actual=actual_word_count
+        )
+
+        # Step 5 — Save as .md file
+        assignments_dir = os.getenv('ASSIGNMENTS_PATH', '/home/awais-faiz/Documents/Ash/assignments')
+        os.makedirs(assignments_dir, exist_ok=True)
+
+        safe_title = title.replace(' ', '_').replace('/', '_')[:50]
+        file_path = os.path.join(assignments_dir, f"{safe_title}_v1.md")
+        file_path = os.path.abspath(file_path)
+
+        with open(file_path, 'w') as f:
+            f.write(f"# {title}\n\n")
+            f.write(f"**Topic:** {topic}\n")
+            f.write(f"**Word Count:** {actual_word_count}\n")
+            f.write(f"**Generated:** {timezone.now().strftime('%B %d, %Y')}\n\n")
+            f.write("---\n\n")
+            f.write(content)
+
+        draft.file_path = file_path
+        draft.save()
+
+        assignment.status = 'completed'
+        assignment.save()
+
+        return {
+            "success": True,
+            "output": f"Assignment completed!\n- Title: {title}\n- Words: {actual_word_count}\n- File: {file_path}\n- Assignment ID: {assignment.id}\n- Draft version: 1"
+        }
+
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def get_assignments(user_id: int) -> dict:
+    """Get all assignments for a user."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import Assignment
+
+        user = User.objects.get(id=user_id)
+        assignments = Assignment.objects.filter(user=user).order_by('-created_at')
+
+        if not assignments.exists():
+            return {"success": True, "output": "No assignments found."}
+
+        result = "Your assignments:\n\n"
+        for a in assignments:
+            deadline_str = f" | Due: {a.deadline.strftime('%b %d, %Y')}" if a.deadline else ""
+            drafts_count = a.drafts.count()
+            result += f"[{a.status.upper()}] {a.title}{deadline_str}\n"
+            result += f"   Topic: {a.topic[:60]}\n"
+            result += f"   Words: {a.word_count} | Drafts: {drafts_count} | ID: {a.id}\n\n"
+
+        return {"success": True, "output": result}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def get_assignment_draft(assignment_id: int, version: int = None) -> dict:
+    """Get the content of an assignment draft."""
+    try:
+        from agent.models import Assignment, AssignmentDraft
+
+        assignment = Assignment.objects.get(id=assignment_id)
+
+        if version:
+            draft = AssignmentDraft.objects.get(assignment=assignment, version=version)
+        else:
+            draft = AssignmentDraft.objects.filter(assignment=assignment).first()
+
+        if not draft:
+            return {"success": False, "output": "No draft found."}
+
+        return {
+            "success": True,
+            "output": f"Assignment: {assignment.title}\nVersion: {draft.version}\nWords: {draft.word_count_actual}\nFile: {draft.file_path}\n\n{draft.content[:500]}..."
+        }
+    except Exception as e:
+        return {"success": False, "output": str(e)}
