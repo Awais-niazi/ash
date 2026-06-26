@@ -459,3 +459,153 @@ def get_assignment_draft(assignment_id: int, version: int = None) -> dict:
         }
     except Exception as e:
         return {"success": False, "output": str(e)}
+    
+def plan_trip(user_id: int, destination: str, departure_date: str, 
+              return_date: str, purpose: str = "leisure") -> dict:
+    """Autonomously research and plan a complete trip itinerary."""
+    try:
+        import os
+        from groq import Groq
+        from django.contrib.auth.models import User
+        from agent.models import Trip
+        from django.utils import timezone
+        from datetime import datetime
+
+        user = User.objects.get(id=user_id)
+        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+        # Parse dates
+        dep_date = datetime.strptime(departure_date, "%Y-%m-%d").date()
+        ret_date = datetime.strptime(return_date, "%Y-%m-%d").date()
+        duration = (ret_date - dep_date).days
+
+        # Create trip record
+        trip = Trip.objects.create(
+            user=user,
+            destination=destination,
+            purpose=purpose,
+            departure_date=dep_date,
+            return_date=ret_date,
+            status='planning'
+        )
+
+        # Research destination
+        weather = web_search(f"weather in {destination} {departure_date}")
+        general = web_search(f"{destination} travel guide tips {datetime.now().year}")
+        practical = web_search(f"{destination} visa requirements hotels transport for pakistani traveler")
+
+        weather_data = weather.get('output', '')
+        general_data = general.get('output', '')
+        practical_data = practical.get('output', '')
+
+        # Generate full itinerary
+        itinerary_response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{
+                "role": "user",
+                "content": f"""Create a detailed {duration}-day trip plan for {destination}.
+
+Trip details:
+- Traveler: Awais Niazi (Pakistani citizen)
+- Destination: {destination}
+- Departure: {departure_date}
+- Return: {return_date}
+- Purpose: {purpose}
+- Duration: {duration} days
+
+Weather research:
+{weather_data[:1500]}
+
+General travel info:
+{general_data[:1500]}
+
+Practical info:
+{practical_data[:1500]}
+
+Create a complete trip plan in Markdown with:
+## Trip Overview
+- Quick summary, purpose, duration
+
+## Weather & Packing
+- Expected weather and what to pack
+
+## Accommodation Recommendations
+- 3 hotel options with price range and location
+
+## Day by Day Itinerary
+- Detailed plan for each day with morning/afternoon/evening activities
+
+## Transportation
+- How to get around, airport transfers, local transport
+
+## Important Information
+- Currency, language, emergency contacts, embassy location if relevant
+
+## Budget Estimate
+- Rough daily budget breakdown in USD
+
+## Tips & Notes
+- Cultural tips, must-try food, things to avoid
+
+Write the complete plan now:"""
+            }],
+            max_tokens=4000
+        )
+
+        itinerary = itinerary_response.choices[0].message.content
+
+        # Save to database
+        trip.itinerary = itinerary
+        trip.status = 'confirmed'
+
+        # Save as markdown file
+        trips_dir = os.getenv('ASSIGNMENTS_PATH', '/home/awais-faiz/Documents/Ash/assignments')
+        trips_dir = os.path.join(os.path.dirname(trips_dir), 'trips')
+        os.makedirs(trips_dir, exist_ok=True)
+
+        safe_dest = destination.replace(' ', '_').replace('/', '_')[:30]
+        file_path = os.path.join(trips_dir, f"trip_{safe_dest}_{departure_date}.md")
+        file_path = os.path.abspath(file_path)
+
+        with open(file_path, 'w') as f:
+            f.write(f"# Trip Plan — {destination}\n\n")
+            f.write(f"**Destination:** {destination}\n")
+            f.write(f"**Dates:** {departure_date} → {return_date} ({duration} days)\n")
+            f.write(f"**Purpose:** {purpose}\n")
+            f.write(f"**Generated:** {timezone.now().strftime('%B %d, %Y')}\n\n")
+            f.write("---\n\n")
+            f.write(itinerary)
+
+        trip.file_path = file_path
+        trip.save()
+
+        return {
+            "success": True,
+            "output": f"Trip plan complete!\n- Destination: {destination}\n- Dates: {departure_date} → {return_date}\n- Duration: {duration} days\n- File: {file_path}\n- Trip ID: {trip.id}"
+        }
+
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def get_trips(user_id: int) -> dict:
+    """Get all trips for a user."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import Trip
+
+        user = User.objects.get(id=user_id)
+        trips = Trip.objects.filter(user=user).order_by('-departure_date')
+
+        if not trips.exists():
+            return {"success": True, "output": "No trips found."}
+
+        result = "Your trips:\n\n"
+        for t in trips:
+            result += f"[{t.status.upper()}] {t.destination}\n"
+            result += f"   Dates: {t.departure_date} → {t.return_date}\n"
+            result += f"   Purpose: {t.purpose} | ID: {t.id}\n\n"
+
+        return {"success": True, "output": result}
+    except Exception as e:
+        return {"success": False, "output": str(e)}    

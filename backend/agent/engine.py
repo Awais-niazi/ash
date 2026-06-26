@@ -40,6 +40,8 @@ You help the user execute tasks on their server including:
 - complete_task(task_id): Mark a task as completed
 - delete_task(task_id): Delete a task
 - update_task(task_id, ...): Update an existing task
+- plan_trip(user_id, destination, departure_date, return_date, purpose): Plan a complete trip itinerary
+- get_trips(user_id): List all planned trips
 
 You have access to the following tools:
 - run_command(command): Run an allowed shell command
@@ -400,6 +402,8 @@ No other text, just JSON."""
             "build_assignment": tools.build_assignment,
             "get_assignments": tools.get_assignments,
             "get_assignment_draft": tools.get_assignment_draft,
+            "plan_trip": tools.plan_trip,
+            "get_trips": tools.get_trips,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:

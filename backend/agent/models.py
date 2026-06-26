@@ -209,3 +209,29 @@ class AssignmentDraft(models.Model):
 
     def __str__(self):
         return f"{self.assignment.title} — v{self.version}"        
+    
+class Trip(models.Model):
+    STATUS_CHOICES = [
+        ('planning', 'Planning'),
+        ('confirmed', 'Confirmed'),
+        ('completed', 'Completed'),
+        ('cancelled', 'Cancelled'),
+    ]
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    destination = models.CharField(max_length=255)
+    purpose = models.CharField(max_length=255, blank=True, null=True)
+    departure_date = models.DateField(null=True, blank=True)
+    return_date = models.DateField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='planning')
+    itinerary = models.TextField(blank=True, null=True)
+    file_path = models.CharField(max_length=500, blank=True, null=True)
+    notes = models.TextField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-departure_date']
+
+    def __str__(self):
+        return f"{self.user.username} — {self.destination} ({self.departure_date})"    
