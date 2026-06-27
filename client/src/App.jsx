@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { login, sendMessage, resetChat } from "./api";
+import ReactMarkdown from "react-markdown";
 import "./App.css";
 
 const BASE_URL = import.meta.env.VITE_API_URL;
@@ -7,71 +8,74 @@ const BASE_URL = import.meta.env.VITE_API_URL;
 async function speak(text) {
   try {
     const token = localStorage.getItem("access_token");
-    const response = await fetch(`${import.meta.env.VITE_API_URL}/api/speak/`, {
+    const response = await fetch(`${BASE_URL}/api/speak/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${token}`
+        Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify({ text })
+      body: JSON.stringify({ text }),
     });
-
-    if (!response.ok) throw new Error("Speech failed");
-
-    const audioBlob = await response.blob();
-    const audioUrl = URL.createObjectURL(audioBlob);
-    const audio = new Audio(audioUrl);
+    if (!response.ok) return;
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const audio = new Audio(url);
     audio.play();
-
-    // Store reference to stop it later
     window.currentAudio = audio;
   } catch (err) {
     console.error("Speech error:", err);
   }
 }
 
+const MODES = [
+  { key: "chat", label: "Chat", icon: "ti-message-circle" },
+  { key: "tasks", label: "Tasks", icon: "ti-checkbox" },
+  { key: "work", label: "Work", icon: "ti-file-text" },
+  { key: "trips", label: "Trips", icon: "ti-plane" },
+];
+
+const MODE_PROMPTS = {
+  tasks: "Show me my pending tasks",
+  work: "Show me my assignments",
+  trips: "Show me my planned trips",
+};
+
 export default function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [loggedIn, setLoggedIn] = useState(
-    !!localStorage.getItem("access_token")
-  );
+  const [loggedIn, setLoggedIn] = useState(!!localStorage.getItem("access_token"));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [activeMode, setActiveMode] = useState("chat");
   const [briefingLoading, setBriefingLoading] = useState(false);
   const messagesEndRef = useRef(null);
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
   useEffect(() => {
-    scrollToBottom();
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Fetch morning briefing on login
   useEffect(() => {
-    if (loggedIn && messages.length === 0) {
-      fetchBriefing();
-    }
+    if (loggedIn && messages.length === 0) fetchBriefing();
   }, [loggedIn]);
 
   const fetchBriefing = async () => {
     setBriefingLoading(true);
     try {
       const token = localStorage.getItem("access_token");
-      const response = await fetch(`${BASE_URL}/api/briefing/`, {
-        headers: { Authorization: `Bearer ${token}` }
+      const res = await fetch(`${BASE_URL}/api/briefing/`, {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const data = await response.json();
+      const data = await res.json();
       if (data.briefing) {
-        setMessages([{ role: "ash", text: data.briefing, isBriefing: true }]);
+        const now = new Date();
+        const time = now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+        setMessages([{ role: "ash", text: data.briefing, isBriefing: true, time }]);
         speak(data.briefing);
       }
     } catch (err) {
-      console.error("Briefing error:", err);
+      console.error(err);
     }
     setBriefingLoading(false);
   };
@@ -87,31 +91,24 @@ export default function App() {
     }
   };
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
-    const userMessage = input;
+  const sendMsg = async (text) => {
+    if (!text.trim()) return;
+    const now = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    setMessages((prev) => [...prev, { role: "user", text, time: now }]);
     setInput("");
-    setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
     setLoading(true);
     try {
-      const data = await sendMessage(userMessage);
-      setMessages((prev) => [...prev, { role: "ash", text: data.reply }]);
+      const data = await sendMessage(text);
+      const replyTime = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      setMessages((prev) => [...prev, { role: "ash", text: data.reply, time: replyTime }]);
       speak(data.reply);
     } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: "ash", text: "Something went wrong. Try again." },
-      ]);
+      setMessages((prev) => [...prev, { role: "ash", text: "Something went wrong. Try again.", time: "" }]);
     }
     setLoading(false);
   };
 
-  const handleReset = async () => {
-    window.speechSynthesis.cancel();
-    await resetChat();
-    setMessages([]);
-    fetchBriefing();
-  };
+  const handleSend = () => sendMsg(input);
 
   const handleKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -120,36 +117,57 @@ export default function App() {
     }
   };
 
+  const handleModeSwitch = (mode) => {
+    setActiveMode(mode);
+    if (mode !== "chat" && MODE_PROMPTS[mode]) {
+      sendMsg(MODE_PROMPTS[mode]);
+    }
+  };
+
+  const handleReset = async () => {
+    window.speechSynthesis?.cancel();
+    window.currentAudio?.pause();
+    await resetChat();
+    setMessages([]);
+    setActiveMode("chat");
+    fetchBriefing();
+  };
+
   const stopSpeaking = () => {
-  window.speechSynthesis.cancel();
-  if (window.currentAudio) {
-    window.currentAudio.pause();
-    window.currentAudio.currentTime = 0;
-  }
-};
+    window.speechSynthesis?.cancel();
+    if (window.currentAudio) {
+      window.currentAudio.pause();
+      window.currentAudio.currentTime = 0;
+    }
+  };
 
   if (!loggedIn) {
     return (
-      <div className="login-container">
-        <div className="login-box">
-          <img src="/Ash.jpeg" alt="Ash" className="ash-avatar-login" />
-          <h1>Ash</h1>
-          <p>Your AI Personal Operating System</p>
-          <form onSubmit={handleLogin}>
+      <div className="login-screen">
+        <div className="login-card">
+          <div className="login-avatar-wrap">
+            <img src="/Ash.jpeg" alt="Ash" className="login-avatar" />
+            <div className="login-online-dot" />
+          </div>
+          <h1 className="login-title">Ash</h1>
+          <p className="login-sub">Your AI Personal Operating System</p>
+          <form onSubmit={handleLogin} className="login-form">
             <input
               type="text"
               placeholder="Username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
+              className="login-input"
             />
             <input
               type="password"
               placeholder="Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              className="login-input"
             />
-            {error && <p className="error">{error}</p>}
-            <button type="submit">Login</button>
+            {error && <p className="login-error">{error}</p>}
+            <button type="submit" className="login-btn">Login</button>
           </form>
         </div>
       </div>
@@ -157,50 +175,89 @@ export default function App() {
   }
 
   return (
-    <div className="chat-container">
-      <div className="chat-header">
-        <div className="ash-header-info">
-          <img src="/Ash.jpeg" alt="Ash" className="ash-avatar-header" />
-          <h2>Ash</h2>
+    <div className="app">
+      <div className="header">
+        <div className="header-left">
+          <div className="avatar-wrap">
+            <img src="/Ash.jpeg" alt="Ash" className="avatar" />
+            <div className="online-dot" />
+          </div>
+          <div className="header-info">
+            <h2 className="header-name">Ash</h2>
+            <span className="header-status">Online</span>
+          </div>
         </div>
-        <div className="header-actions">
-          <button onClick={stopSpeaking} className="stop-btn">⏹ Stop</button>
-          <button onClick={handleReset} className="reset-btn">New Chat</button>
+        <div className="header-right">
+          <button onClick={stopSpeaking} className="icon-btn" title="Stop speaking">
+            <i className="ti ti-player-stop" aria-hidden="true" />
+          </button>
+          <button onClick={handleReset} className="icon-btn" title="New chat">
+            <i className="ti ti-edit" aria-hidden="true" />
+          </button>
         </div>
       </div>
 
-      <div className="chat-messages">
+      <div className="mode-bar">
+        {MODES.map((m) => (
+          <button
+            key={m.key}
+            className={`mode-btn ${activeMode === m.key ? "active" : ""}`}
+            onClick={() => handleModeSwitch(m.key)}
+          >
+            <i className={`ti ${m.icon}`} aria-hidden="true" />
+            {m.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="messages">
         {briefingLoading && (
           <div className="briefing-loading">
-            <div className="pulse" />
-            <span>Ash is preparing your morning briefing...</span>
+            <div className="pulse-dot" />
+            <span>Preparing your morning briefing...</span>
           </div>
         )}
         {messages.map((msg, i) => (
-          <div key={i} className={`message ${msg.role} ${msg.isBriefing ? "briefing" : ""}`}>
-            <span className="label">{msg.role === "user" ? "You" : "Ash"}</span>
-            <pre>{msg.text}</pre>
+          <div key={i} className={`msg ${msg.role}`}>
+            {msg.isBriefing && (
+              <div className="briefing-badge">
+                <i className="ti ti-sun" aria-hidden="true" /> Morning briefing
+              </div>
+            )}
+            <div className="msg-label">{msg.role === "user" ? "You" : "Ash"}</div>
+            <div className="msg-bubble">
+              <ReactMarkdown>{msg.text}</ReactMarkdown>
+            </div>
+            {msg.time && <div className="msg-time">{msg.time}</div>}
           </div>
         ))}
         {loading && (
-          <div className="message ash">
-            <span className="label">Ash</span>
-            <pre>Thinking...</pre>
+          <div className="msg ash">
+            <div className="msg-label">Ash</div>
+            <div className="msg-bubble typing-bubble">
+              <div className="dot" />
+              <div className="dot" />
+              <div className="dot" />
+            </div>
           </div>
         )}
         <div ref={messagesEndRef} />
       </div>
 
-      <div className="chat-input">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Tell Ash what to do... (Enter to send)"
-          rows={3}
-        />
-        <button onClick={handleSend} disabled={loading}>
-          Send
+      <div className="input-area">
+        <div className="input-wrap">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Tell Ash what to do..."
+            rows={1}
+            className="input-field"
+          />
+          <i className="ti ti-microphone input-mic" aria-hidden="true" />
+        </div>
+        <button onClick={handleSend} disabled={loading} className="send-btn">
+          <i className="ti ti-arrow-up" aria-hidden="true" />
         </button>
       </div>
     </div>
