@@ -248,7 +248,11 @@ export default function App() {
         <div className="input-wrap">
           <textarea
             value={input}
-            onChange={(e) => setInput(e.target.value)}
+            onChange={(e) => {
+              setInput(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = Math.min(e.target.scrollHeight, 120) + "px";
+            }}
             onKeyDown={handleKeyDown}
             placeholder="Tell Ash what to do..."
             rows={1}

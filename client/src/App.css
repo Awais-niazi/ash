@@ -446,7 +446,10 @@ body {
   font-family: inherit;
   resize: none;
   max-height: 120px;
+  min-height: 22px;
+  height: 22px;
   line-height: 1.5;
+  overflow-y: auto;
 }
 
 .input-field::placeholder { color: #554455; }
