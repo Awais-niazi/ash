@@ -57,7 +57,11 @@ export default function App() {
   }, [messages]);
 
   useEffect(() => {
-    if (loggedIn && messages.length === 0) fetchBriefing();
+  if (loggedIn && messages.length === 0) {
+    if (import.meta.env.VITE_ENABLE_BRIEFING !== 'false') {
+      fetchBriefing();
+    }
+  }
   }, [loggedIn]);
 
   const fetchBriefing = async () => {
