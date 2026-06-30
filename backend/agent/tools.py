@@ -500,7 +500,7 @@ def plan_trip(user_id: int, destination: str, departure_date: str,
 
         # Generate full itinerary
         itinerary_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="qwen/qwen3.6-27b",
             messages=[{
                 "role": "user",
                 "content": f"""Create a detailed {duration}-day trip plan for {destination}.

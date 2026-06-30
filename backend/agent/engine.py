@@ -106,7 +106,7 @@ def assess_risk(tool_name: str, args: dict) -> float:
 
 class AgentEngine:
     def __init__(self, user=None):
-        self.model = "llama-3.3-70b-versatile"
+        self.model = "qwen/qwen3.6-27b"
         self.conversation_history = []
         self.max_history = 20
         self.user = user
