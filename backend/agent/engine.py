@@ -466,6 +466,8 @@ No other text, just JSON."""
             except (json.JSONDecodeError, KeyError):
                 pass
 
+            reply = re.sub(r'<think>.*?</think>', '', reply, flags=re.DOTALL).strip()
+
             self.conversation_history.append({
                 "role": "assistant",
                 "content": reply
