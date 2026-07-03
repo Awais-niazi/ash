@@ -287,7 +287,8 @@ No other text, just JSON."""
                     {"role": "system", "content": summary_prompt},
                     *self.conversation_history[-10:]
                 ],
-                max_tokens=500
+                max_tokens=500,
+                extra_body={"reasoning_effort": "none"}
             )
 
             raw = response.choices[0].message.content.strip()
@@ -346,7 +347,8 @@ No other text, just JSON."""
                     {"role": "system", "content": summary_prompt},
                     *self.conversation_history[-6:]
                 ],
-                max_tokens=500
+                max_tokens=500,
+                extra_body={"reasoning_effort": "none"}
             )
             raw = response.choices[0].message.content.strip()
             raw = re.sub(r"```json|```", "", raw).strip()
@@ -436,7 +438,8 @@ No other text, just JSON."""
                 messages=[
                     {"role": "system", "content": full_system_prompt},
                     *self.conversation_history
-                ]
+                ],
+                extra_body={"reasoning_effort": "none"}
             )
 
             reply = response.choices[0].message.content
