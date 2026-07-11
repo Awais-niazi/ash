@@ -619,6 +619,7 @@ def add_scheduled_task(user_id: int, name: str, cron_schedule: str,
     try:
         from django.contrib.auth.models import User
         from agent.models import ScheduledTask
+        from django.utils import timezone
         from croniter import croniter
 
         if not croniter.is_valid(cron_schedule):
@@ -633,6 +634,9 @@ def add_scheduled_task(user_id: int, name: str, cron_schedule: str,
             cron_schedule=cron_schedule,
             action={"type": task_type, "prompt": prompt},
             enabled=True,
+            # Baseline last_run to creation time so the task fires at its NEXT
+            # scheduled slot, not immediately on the next beat tick.
+            last_run=timezone.now(),
         )
         return {
             "success": True,

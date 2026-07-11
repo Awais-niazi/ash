@@ -1,12 +1,13 @@
 from django.urls import path
 from .views import (
-    ChatView, ResetView, MorningBriefingView, SpeakView,
+    ChatView, ResetView, MorningBriefingView, SpeakView, HistoryView,
     VapidKeyView, PushSubscribeView, PushUnsubscribeView, PushTestView,
 )
 
 urlpatterns = [
     path("chat/", ChatView.as_view(), name="chat"),
     path("reset/", ResetView.as_view(), name="reset"),
+    path("history/", HistoryView.as_view(), name="history"),
     path("briefing/", MorningBriefingView.as_view(), name="briefing"),
     path("speak/", SpeakView.as_view(), name="speak"),
     path("push/key/", VapidKeyView.as_view(), name="push-key"),

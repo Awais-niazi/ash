@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react";
-import { login, sendMessage, resetChat } from "./api";
+import { login, sendMessage, resetChat, getHistory } from "./api";
 import { enablePush, pushSupported } from "./push";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
@@ -58,13 +58,41 @@ export default function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  useEffect(() => {
-  if (loggedIn && messages.length === 0) {
-    if (import.meta.env.VITE_ENABLE_BRIEFING !== 'false') {
-      fetchBriefing();
+  // On open, load saved conversation history (so scheduled-task replies and
+  // messages from the other Ash instance show up). Only fall back to the
+  // login briefing when there's no history yet.
+  const loadHistory = async () => {
+    try {
+      const history = await getHistory();
+      if (history.length > 0) {
+        setMessages(history);
+        return true;
+      }
+    } catch (err) {
+      console.error("history load failed", err);
     }
-  }
+    return false;
+  };
+
+  useEffect(() => {
+    if (!loggedIn) return;
+    loadHistory().then((had) => {
+      if (!had && import.meta.env.VITE_ENABLE_BRIEFING !== "false") {
+        fetchBriefing();
+      }
+    });
   }, [loggedIn]);
+
+  // Refresh history when the app regains focus (e.g. after tapping a
+  // notification while it was in the background).
+  useEffect(() => {
+    if (!loggedIn) return;
+    const onVisible = () => {
+      if (document.visibilityState === "visible" && !loading) loadHistory();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [loggedIn, loading]);
 
   // If notifications were already granted, silently refresh the subscription
   // on login so it stays valid on the server.
