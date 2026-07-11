@@ -1,9 +1,21 @@
 import subprocess
 import os
 
+from .filesystem import (
+    _safe_path,
+    _display,
+    UnsafePathError,
+    list_directory,
+    create_folder,
+    move_file,
+    rename_file,
+    organize_folder,
+)
+
+# Kept intentionally small — git is the only real power tool. File reads/writes
+# now go through the sandbox in filesystem.py instead of shelling out to cat/mv.
 ALLOWED_COMMANDS = [
-    "git", "ls", "pwd", "cat", "echo",
-    "mkdir", "touch", "cp", "mv"
+    "git", "ls", "pwd", "echo", "mkdir", "touch",
 ]
 
 def run_command(command: str) -> dict:
@@ -41,11 +53,6 @@ def git_status(repo_path: str) -> dict:
     return run_command(f"git -C {repo_path} status")
 
 
-def git_add(repo_path: str, files: str = ".") -> dict:
-    """Stage files for commit."""
-    return run_command(f"git -C {repo_path} add {files}")
-
-
 def git_commit(repo_path: str, message: str) -> dict:
     """Commit staged changes."""
     import subprocess
@@ -75,30 +82,36 @@ def git_create_branch(repo_path: str, branch_name: str) -> dict:
 
 
 def read_file(file_path: str) -> dict:
-    """Read contents of a file."""
+    """Read contents of a file (confined to Ash's sandboxed workspace)."""
     try:
-        with open(file_path, "r") as f:
+        target = _safe_path(file_path, must_exist=True)
+        with open(target, "r") as f:
             return {"success": True, "output": f.read()}
+    except UnsafePathError as e:
+        return {"success": False, "output": str(e)}
     except Exception as e:
         return {"success": False, "output": str(e)}
 
 
 def write_file(file_path: str, content: str) -> dict:
-    """Write content to a file."""
+    """Write content to a file (confined to Ash's sandboxed workspace)."""
     try:
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-        with open(file_path, "w") as f:
+        target = _safe_path(file_path)
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, "w") as f:
             f.write(content)
-        return {"success": True, "output": f"Written to {file_path}"}
+        return {"success": True, "output": f"Written to {_display(target)}"}
+    except UnsafePathError as e:
+        return {"success": False, "output": str(e)}
     except Exception as e:
         return {"success": False, "output": str(e)}
-    
+
 
 def git_add(repo_path: str, files: str = ".") -> dict:
     """Stage files for commit."""
     if isinstance(files, list):
         files = " ".join(files)
-    return run_command(f"git -C {repo_path} add {files}")    
+    return run_command(f"git -C {repo_path} add {files}")
 
 def web_search(query: str) -> dict:
     """Search the web for current information."""
@@ -584,6 +597,88 @@ Write the complete plan now:"""
             "output": f"Trip plan complete!\n- Destination: {destination}\n- Dates: {departure_date} → {return_date}\n- Duration: {duration} days\n- File: {file_path}\n- Trip ID: {trip.id}"
         }
 
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def add_scheduled_task(user_id: int, name: str, cron_schedule: str,
+                       prompt: str, task_type: str = "chat") -> dict:
+    """Schedule a recurring task. cron_schedule is standard 5-field cron
+    (min hour day month weekday), e.g. '0 8 * * *' for every day at 08:00 UTC.
+    `prompt` is the instruction Ash runs when it fires."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import ScheduledTask
+        from croniter import croniter
+
+        if not croniter.is_valid(cron_schedule):
+            return {"success": False,
+                    "output": f"'{cron_schedule}' is not a valid cron expression."}
+
+        user = User.objects.get(id=user_id)
+        task = ScheduledTask.objects.create(
+            user=user,
+            name=name,
+            task_type=task_type,
+            cron_schedule=cron_schedule,
+            action={"type": task_type, "prompt": prompt},
+            enabled=True,
+        )
+        return {
+            "success": True,
+            "output": f"Scheduled '{name}' (ID: {task.id}) — runs on cron '{cron_schedule}' (UTC).",
+        }
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def list_scheduled_tasks(user_id: int) -> dict:
+    """List all scheduled tasks for a user."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import ScheduledTask
+
+        user = User.objects.get(id=user_id)
+        tasks = ScheduledTask.objects.filter(user=user)
+        if not tasks.exists():
+            return {"success": True, "output": "No scheduled tasks."}
+
+        result = "Your scheduled tasks:\n\n"
+        for t in tasks:
+            state = "on" if t.enabled else "off"
+            last = t.last_run.strftime('%b %d %H:%M') if t.last_run else "never"
+            result += f"[{state}] {t.name} — cron '{t.cron_schedule}' (ID: {t.id})\n"
+            result += f"   last run: {last} ({t.last_status})\n\n"
+        return {"success": True, "output": result}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def delete_scheduled_task(task_id: int) -> dict:
+    """Delete a scheduled task."""
+    try:
+        from agent.models import ScheduledTask
+        task = ScheduledTask.objects.get(id=task_id)
+        name = task.name
+        task.delete()
+        return {"success": True, "output": f"Deleted scheduled task '{name}'."}
+    except ScheduledTask.DoesNotExist:
+        return {"success": False, "output": f"Scheduled task {task_id} not found."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def toggle_scheduled_task(task_id: int, enabled: bool = True) -> dict:
+    """Enable or disable a scheduled task without deleting it."""
+    try:
+        from agent.models import ScheduledTask
+        task = ScheduledTask.objects.get(id=task_id)
+        task.enabled = bool(enabled)
+        task.save(update_fields=["enabled"])
+        state = "enabled" if task.enabled else "disabled"
+        return {"success": True, "output": f"Scheduled task '{task.name}' {state}."}
+    except ScheduledTask.DoesNotExist:
+        return {"success": False, "output": f"Scheduled task {task_id} not found."}
     except Exception as e:
         return {"success": False, "output": str(e)}
 

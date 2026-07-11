@@ -52,6 +52,15 @@ You have access to the following tools:
 - git_create_branch(repo_path, branch_name): Create a new branch
 - read_file(file_path): Read a file
 - write_file(file_path, content): Write to a file
+- list_directory(path): List folders and files in a directory
+- create_folder(path): Create a new folder
+- move_file(source, destination): Move a file/folder into another folder
+- rename_file(path, new_name): Rename a file or folder
+- organize_folder(path, by): Auto-sort a folder into ordered subfolders. by="type" groups into Images/Documents/Videos/Code/etc; by="date" groups into YYYY-MM folders
+- add_scheduled_task(user_id, name, cron_schedule, prompt, task_type): Schedule a recurring task. cron_schedule is 5-field cron in UTC, e.g. "0 8 * * *" = every day 08:00 UTC. prompt is what you run when it fires
+- list_scheduled_tasks(user_id): List all scheduled tasks
+- delete_scheduled_task(task_id): Delete a scheduled task
+- toggle_scheduled_task(task_id, enabled): Turn a scheduled task on/off
 - web_search(query): Search the web for current information
 - get_weather(location): Get current weather for any location
 - get_news(topic): Get latest news on any topic
@@ -63,6 +72,8 @@ When you need to use a tool, respond ONLY with a JSON block like this:
 {{"tool": "git_status", "args": {{"repo_path": "/path/to/repo"}}}}
 
 The default repo path is always /home/awais-faiz/Dev/ASH unless the user specifies otherwise.
+File operations are confined to the user's home folder — you can organize things like ~/Downloads and ~/Documents, but you cannot touch system files or secrets. Paths may be given relative to home (e.g. "Downloads") or absolute.
+When the user asks to schedule something recurring (e.g. "every morning at 8", "each Monday"), translate it to a 5-field UTC cron string yourself and call add_scheduled_task.
 Only call ONE tool at a time. Wait for the result before calling the next tool.
 Do not include any other text when calling a tool.
 Always explain what you are about to do before doing it.
@@ -94,9 +105,12 @@ def classify_memory_type(key: str, value: str) -> str:
 
 
 def assess_risk(tool_name: str, args: dict) -> float:
-    high_risk = ["git_push", "run_command"]
-    medium_risk = ["git_commit", "git_create_branch", "write_file"]
-    low_risk = ["git_status", "git_add", "read_file"]
+    high_risk = ["git_push", "run_command", "delete_scheduled_task"]
+    medium_risk = [
+        "git_commit", "git_create_branch", "write_file",
+        "move_file", "rename_file", "organize_folder", "add_scheduled_task",
+    ]
+    low_risk = ["git_status", "git_add", "read_file", "list_directory"]
     if tool_name in high_risk:
         return 0.8
     if tool_name in medium_risk:
@@ -406,6 +420,15 @@ No other text, just JSON."""
             "get_assignment_draft": tools.get_assignment_draft,
             "plan_trip": tools.plan_trip,
             "get_trips": tools.get_trips,
+            "list_directory": tools.list_directory,
+            "create_folder": tools.create_folder,
+            "move_file": tools.move_file,
+            "rename_file": tools.rename_file,
+            "organize_folder": tools.organize_folder,
+            "add_scheduled_task": tools.add_scheduled_task,
+            "list_scheduled_tasks": tools.list_scheduled_tasks,
+            "delete_scheduled_task": tools.delete_scheduled_task,
+            "toggle_scheduled_task": tools.toggle_scheduled_task,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:

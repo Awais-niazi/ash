@@ -8,12 +8,15 @@ from rest_framework import status
 from agent.engine import AgentEngine
 import traceback
 
-agent_sessions = {}
-
 def get_agent(user):
-    if user.id not in agent_sessions:
-        agent_sessions[user.id] = AgentEngine(user=user)
-    return agent_sessions[user.id]
+    """Build a fresh agent per request.
+
+    Ash is single-user, but the engine still rehydrates its conversation and
+    memories from the database on every call, so there is nothing to cache.
+    Building per request keeps state correct across Gunicorn workers and avoids
+    the unbounded in-memory session dict this used to hold.
+    """
+    return AgentEngine(user=user)
 
 
 class ChatView(APIView):

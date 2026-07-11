@@ -112,14 +112,25 @@ class AutonomousDecision(models.Model):
 
 
 class ScheduledTask(models.Model):
+    STATUS_CHOICES = [
+        ('ok', 'Ok'),
+        ('error', 'Error'),
+        ('never', 'Never run'),
+    ]
+
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     name = models.CharField(max_length=255)
-    task_type = models.CharField(max_length=50)
+    task_type = models.CharField(max_length=50, default='chat')
     cron_schedule = models.CharField(max_length=100)
     action = models.JSONField(default=dict)
     enabled = models.BooleanField(default=True)
     last_run = models.DateTimeField(null=True, blank=True)
+    last_status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='never')
+    last_result = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"{self.user.username} — {self.name} ({self.cron_schedule})"
