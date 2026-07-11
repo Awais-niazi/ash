@@ -13,6 +13,7 @@ A task's `action` is a small JSON blob:
 """
 
 from celery import shared_task
+from django.db import transaction
 from django.utils import timezone
 
 
@@ -71,16 +72,34 @@ def run_due_scheduled_tasks(sync: bool = False) -> dict:
 
     now = timezone.now()
     fired = []
-    for task in ScheduledTask.objects.filter(enabled=True):
-        if _is_due(task.cron_schedule, task.last_run, now):
-            # Stamp last_run immediately so a slow tick can't double-fire.
+    # Ash's laptop and server share one database, so a naive query-then-fire
+    # would let both instances run the same task. We claim each due task under
+    # a row lock (skip_locked so instances don't block each other) and re-check
+    # due-ness inside the lock — the first to stamp last_run wins, the second
+    # sees the fresh last_run and backs off.
+    candidate_ids = list(
+        ScheduledTask.objects.filter(enabled=True).values_list("id", flat=True)
+    )
+    for tid in candidate_ids:
+        with transaction.atomic():
+            task = (
+                ScheduledTask.objects
+                .select_for_update(skip_locked=True)
+                .filter(id=tid, enabled=True)
+                .first()
+            )
+            if task is None:
+                continue  # locked by the other instance, or deleted
+            if not _is_due(task.cron_schedule, task.last_run, now):
+                continue
             task.last_run = now
             task.save(update_fields=["last_run"])
-            if sync:
-                _run_task(task)
-            else:
-                execute_scheduled_task.delay(task.id)
-            fired.append(task.id)
+        # Dispatch outside the lock so a slow LLM run doesn't hold the row.
+        if sync:
+            _run_task(task)
+        else:
+            execute_scheduled_task.delay(task.id)
+        fired.append(task.id)
     return {"checked_at": now.isoformat(), "fired": fired}
 
 

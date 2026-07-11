@@ -1,0 +1,17 @@
+[Unit]
+Description=Ash Celery Worker
+After=network.target redis-server.service
+Requires=redis-server.service
+
+[Service]
+Type=simple
+User=awais
+Group=awais
+WorkingDirectory=/home/awais/ash/backend
+Environment="DJANGO_SETTINGS_MODULE=ash.settings"
+ExecStart=/home/awais/ash/backend/venv/bin/celery -A ash worker --loglevel=info
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
