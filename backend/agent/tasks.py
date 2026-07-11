@@ -39,20 +39,18 @@ def _run_task(task) -> str:
     from .engine import AgentEngine
 
     action = task.action or {}
-    action_type = action.get("type", "chat")
 
     try:
-        if action_type == "briefing":
-            # Use the real morning-briefing pipeline (live weather/news/tasks/
-            # memories), same as the /api/briefing/ endpoint.
-            from .briefing import generate_morning_briefing
-            reply = generate_morning_briefing(task.user)
-            notif_title = "Good morning ☀️"
-        else:
-            prompt = action.get("prompt") or action.get("message") or task.name
-            engine = AgentEngine(user=task.user)
-            reply = engine.chat(prompt)
-            notif_title = task.name or "Ash 🤖"
+        base = action.get("prompt") or action.get("message") or task.name
+        # Scheduled replies go straight to a phone notification, so ask for
+        # something short.
+        prompt = (base + "\n\n(This is a scheduled reminder — reply in 1-2 "
+                  "short lines suitable for a phone notification.)")
+        engine = AgentEngine(user=task.user)
+        reply = engine.chat(prompt)
+        # If Ash already fired a notify() during the run, don't double-push.
+        already_notified = getattr(engine, "notified", False)
+        notif_title = task.name or "Ash 🤖"
 
         task.last_run = timezone.now()
         task.last_status = "ok"
@@ -60,11 +58,12 @@ def _run_task(task) -> str:
         task.save(update_fields=["last_run", "last_status", "last_result"])
 
         # Push the result to the user's phone (no-op if they haven't subscribed).
-        try:
-            from .notifications import send_push
-            send_push(task.user, notif_title, reply or "", url="/")
-        except Exception:
-            pass
+        if not already_notified:
+            try:
+                from .notifications import send_push
+                send_push(task.user, notif_title, reply or "", url="/")
+            except Exception:
+                pass
 
         return reply
     except Exception as e:
@@ -118,10 +117,48 @@ def run_due_scheduled_tasks(sync: bool = False) -> dict:
     return {"checked_at": now.isoformat(), "fired": fired}
 
 
+def run_deadline_checks() -> dict:
+    """Push a one-time alert for each pending task within 24h of its deadline
+    (or already overdue). deadline_notified guards against repeat alerts."""
+    from datetime import timedelta
+    from .models import Task
+    from .notifications import send_push
+
+    now = timezone.now()
+    horizon = now + timedelta(hours=24)
+    alerted = []
+    due_soon = Task.objects.filter(
+        status="pending",
+        deadline__isnull=False,
+        deadline__lte=horizon,
+        deadline_notified=False,
+    )
+    for t in due_soon:
+        when = timezone.localtime(t.deadline).strftime("%b %d, %H:%M")
+        if t.deadline < now:
+            body = f"⏰ Overdue: '{t.title}' was due {when}."
+        else:
+            secs = (t.deadline - now).total_seconds()
+            hours, mins = int(secs // 3600), int((secs % 3600) // 60)
+            eta = f"{hours}h {mins}m" if hours else f"{mins}m"
+            body = f"⏰ '{t.title}' is due in {eta} ({when})."
+        send_push(t.user, "Deadline reminder", body)
+        t.deadline_notified = True
+        t.save(update_fields=["deadline_notified"])
+        alerted.append(t.id)
+    return {"checked_at": now.isoformat(), "alerted": alerted}
+
+
 @shared_task(name="agent.tasks.dispatch_due_tasks")
 def dispatch_due_tasks():
     """Beat entrypoint — runs every minute."""
     return run_due_scheduled_tasks()
+
+
+@shared_task(name="agent.tasks.check_deadlines")
+def check_deadlines():
+    """Beat entrypoint — runs periodically to alert on upcoming deadlines."""
+    return run_deadline_checks()
 
 
 @shared_task(name="agent.tasks.execute_scheduled_task")

@@ -284,6 +284,7 @@ def update_task(task_id: int, title: str = None, description: str = None, priori
                 deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
                 from django.utils import timezone as tz
                 task.deadline = tz.make_aware(deadline_dt)
+                task.deadline_notified = False  # re-alert for the new deadline
             except ValueError:
                 pass
 
@@ -694,6 +695,23 @@ def toggle_scheduled_task(task_id: int, enabled: bool = True) -> dict:
         return {"success": True, "output": f"Scheduled task '{task.name}' {state}."}
     except ScheduledTask.DoesNotExist:
         return {"success": False, "output": f"Scheduled task {task_id} not found."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def notify(user_id: int, title: str, message: str) -> dict:
+    """Send a SHORT push notification to the user's phone. Use for brief,
+    genuinely useful, time-sensitive alerts (reminders, confirmations, nudges).
+    Keep title a few words and message to 1-2 lines."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.notifications import send_push
+        user = User.objects.get(id=user_id)
+        n = send_push(user, (title or "Ash")[:80], (message or "")[:300])
+        if n == 0:
+            return {"success": False,
+                    "output": "No devices are subscribed to notifications."}
+        return {"success": True, "output": f"Notification sent to {n} device(s)."}
     except Exception as e:
         return {"success": False, "output": str(e)}
 

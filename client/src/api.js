@@ -27,14 +27,6 @@ export const sendMessage = async (message) => {
   return response.data;
 };
 
-export const getHistory = async () => {
-  const token = localStorage.getItem('access_token');
-  const response = await axios.get(`${BASE_URL}/api/history/`, {
-    headers: { Authorization: `Bearer ${token}` }
-  });
-  return response.data.messages || [];
-};
-
 export const resetChat = async () => {
   const token = localStorage.getItem('access_token');
   await axios.post(

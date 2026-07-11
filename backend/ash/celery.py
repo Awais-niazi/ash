@@ -24,4 +24,9 @@ app.conf.beat_schedule = {
         "task": "agent.tasks.dispatch_due_tasks",
         "schedule": crontab(minute="*"),
     },
+    # Alert on tasks approaching their deadline, every 30 minutes.
+    "check-task-deadlines": {
+        "task": "agent.tasks.check_deadlines",
+        "schedule": crontab(minute="0,30"),
+    },
 }

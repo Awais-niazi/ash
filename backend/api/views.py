@@ -75,32 +75,6 @@ class ResetView(APIView):
             )
 
 
-class HistoryView(APIView):
-    """Return the user's most recent conversation so the client can show past
-    messages (including replies produced by scheduled tasks while the app was
-    closed, and messages created on the other Ash instance)."""
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        from agent.models import Conversation, Message
-        from django.utils import timezone
-
-        conv = Conversation.objects.filter(user=request.user).first()
-        if not conv:
-            return Response({"messages": []})
-
-        messages = Message.objects.filter(conversation=conv).order_by('created_at')[:200]
-        data = [
-            {
-                "role": "ash" if m.role == "assistant" else "user",
-                "text": m.content,
-                "time": timezone.localtime(m.created_at).strftime("%H:%M"),
-            }
-            for m in messages
-        ]
-        return Response({"messages": data})
-
-
 class MorningBriefingView(APIView):
     permission_classes = [IsAuthenticated]
 

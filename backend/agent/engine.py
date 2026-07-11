@@ -57,10 +57,11 @@ You have access to the following tools:
 - move_file(source, destination): Move a file/folder into another folder
 - rename_file(path, new_name): Rename a file or folder
 - organize_folder(path, by): Auto-sort a folder into ordered subfolders. by="type" groups into Images/Documents/Videos/Code/etc; by="date" groups into YYYY-MM folders
-- add_scheduled_task(user_id, name, cron_schedule, prompt, task_type): Schedule a recurring task. cron_schedule is 5-field cron in Pakistan time (PKT), e.g. "0 8 * * *" = every day 08:00 PKT. prompt is what you run when it fires. For a recurring MORNING BRIEFING, pass task_type="briefing" (this runs the full weather/news/tasks/memory briefing automatically — the prompt is then ignored). For anything else use task_type="chat" (the default)
+- add_scheduled_task(user_id, name, cron_schedule, prompt): Schedule a recurring task. cron_schedule is 5-field cron in Pakistan time (PKT), e.g. "0 8 * * *" = every day 08:00 PKT. prompt is the short reminder/instruction Ash runs when it fires
 - list_scheduled_tasks(user_id): List all scheduled tasks
 - delete_scheduled_task(task_id): Delete a scheduled task
 - toggle_scheduled_task(task_id, enabled): Turn a scheduled task on/off
+- notify(user_id, title, message): Send a SHORT push notification to the user's phone. Use it whenever you judge something is worth alerting them about — a reminder firing, a confirmation, a useful heads-up. Keep it to 1-2 lines. Don't use it for long content (weather/news dumps) or trivial chit-chat.
 - web_search(query): Search the web for current information
 - get_weather(location): Get current weather for any location
 - get_news(topic): Get latest news on any topic
@@ -110,7 +111,7 @@ def assess_risk(tool_name: str, args: dict) -> float:
         "git_commit", "git_create_branch", "write_file",
         "move_file", "rename_file", "organize_folder", "add_scheduled_task",
     ]
-    low_risk = ["git_status", "git_add", "read_file", "list_directory"]
+    low_risk = ["git_status", "git_add", "read_file", "list_directory", "notify"]
     if tool_name in high_risk:
         return 0.8
     if tool_name in medium_risk:
@@ -126,6 +127,7 @@ class AgentEngine:
         self.user = user
         self.conversation = None
         self.memory_context = ""
+        self.notified = False  # set True when the notify tool fires this session
 
         if user:
             self._load_memories()
@@ -429,6 +431,7 @@ No other text, just JSON."""
             "list_scheduled_tasks": tools.list_scheduled_tasks,
             "delete_scheduled_task": tools.delete_scheduled_task,
             "toggle_scheduled_task": tools.toggle_scheduled_task,
+            "notify": tools.notify,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:
@@ -477,6 +480,8 @@ No other text, just JSON."""
                         risk = assess_risk(tool_name, tool_args)
                         if self.user:
                             self._save_decision(tool_name, tool_args, risk, "success")
+                        if tool_name == "notify":
+                            self.notified = True
                         tool_output = self.execute_tool(tool_name, tool_args)
                         self.conversation_history.append({
                             "role": "assistant",
