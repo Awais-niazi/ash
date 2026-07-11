@@ -11,7 +11,9 @@ click-didyoumean==0.3.1
 click-plugins==1.1.1.2
 click-repl==0.3.0
 croniter==6.2.4
+cryptography==49.0.0
 distro==1.9.0
+http-ece==1.2.1
 Django==5.2.15
 django-cors-headers==4.9.0
 django-ratelimit==4.1.0
@@ -31,9 +33,11 @@ psycopg2-binary==2.9.12
 pydantic==2.13.4
 pydantic_core==2.46.4
 PyJWT==2.13.0
+py-vapid==1.9.4
 python-dateutil==2.9.0.post0
 python-dotenv==1.2.2
 pytz==2026.2
+pywebpush==2.3.0
 redis==7.4.0
 regex==2026.5.9
 reportlab==4.5.1

@@ -79,14 +79,23 @@ REST_FRAMEWORK = {
     ),
 }
 
+# Web Push (VAPID). Generate once with scripts/gen_vapid_keys.py and put the
+# values in each machine's .env. The public key is safe to expose to the
+# browser; the private key must stay secret.
+VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
+VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
+VAPID_SUBJECT = os.getenv('VAPID_SUBJECT', 'mailto:awaisfaiz101@gmail.com')
+
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/1')
-CELERY_TIMEZONE = 'UTC'
+CELERY_TIMEZONE = 'Asia/Karachi'
 CELERY_TASK_TRACK_STARTED = True
 CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+# Pakistan time — scheduled-task cron expressions and displayed times are
+# interpreted in this zone, so "8am" means 8am PKT, not UTC.
+TIME_ZONE = 'Asia/Karachi'
 USE_I18N = True
 USE_TZ = True
 

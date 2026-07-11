@@ -81,57 +81,9 @@ class MorningBriefingView(APIView):
     @method_decorator(ratelimit(key='user', rate='2/h', method='GET', block=True))
     def get(self, request):
         try:
-            from agent.tools import get_weather, get_news
-            from agent.models import Memory, Task
+            from agent.briefing import generate_morning_briefing
 
-            weather = get_weather("Lahore Pakistan")
-            news = get_news("world news today")
-
-            memories = Memory.objects.filter(
-                user=request.user
-            ).order_by('-confidence_score')[:5]
-            memory_text = "\n".join([f"- {m.key}: {m.value}" for m in memories])
-
-            # Get pending tasks
-            tasks = Task.objects.filter(
-                user=request.user,
-                status='pending'
-            ).order_by('deadline', '-priority')[:10]
-
-            if tasks.exists():
-                task_text = "PENDING TASKS:\n"
-                for task in tasks:
-                    deadline_str = f" (due {task.deadline.strftime('%b %d')})" if task.deadline else ""
-                    overdue = " OVERDUE" if task.is_overdue() else ""
-                    task_text += f"- [{task.priority.upper()}] {task.title}{deadline_str}{overdue}\n"
-            else:
-                task_text = "PENDING TASKS:\nNo pending tasks."
-
-            briefing_prompt = f"""Generate a warm morning briefing for Awais. Use this real data:
-
-WEATHER:
-{weather.get('output', 'Weather unavailable')}
-
-NEWS:
-{news.get('output', 'News unavailable')}
-
-WHAT YOU KNOW ABOUT AWAIS:
-{memory_text}
-
-{task_text}
-
-Instructions:
-- Warm personal greeting
-- Summarize the weather in 1 sentence
-- Give top 3 news headlines
-- Mention pending tasks and any overdue ones
-- End with a motivational thought
-- Keep it concise and friendly
-- Speak directly to Awais
-- Do NOT call any tools, all data is already provided above"""
-
-            agent = get_agent(request.user)
-            reply = agent.chat(briefing_prompt)
+            reply = generate_morning_briefing(request.user)
             return Response({"briefing": reply}, status=status.HTTP_200_OK)
 
         except Ratelimited:
@@ -151,6 +103,77 @@ Instructions:
                 {"error": error_msg},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+class VapidKeyView(APIView):
+    """Expose the VAPID public key so the browser can subscribe."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from django.conf import settings
+        return Response({"publicKey": settings.VAPID_PUBLIC_KEY})
+
+
+class PushSubscribeView(APIView):
+    """Store (or refresh) a browser's Web Push subscription."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from agent.models import PushSubscription
+
+        sub = request.data.get("subscription") or request.data
+        endpoint = sub.get("endpoint")
+        keys = sub.get("keys", {})
+        p256dh = keys.get("p256dh")
+        auth = keys.get("auth")
+
+        if not (endpoint and p256dh and auth):
+            return Response({"error": "Invalid subscription"},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        PushSubscription.objects.update_or_create(
+            endpoint=endpoint,
+            defaults={
+                "user": request.user,
+                "p256dh": p256dh,
+                "auth": auth,
+                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
+            },
+        )
+        return Response({"status": "subscribed"}, status=status.HTTP_201_CREATED)
+
+
+class PushUnsubscribeView(APIView):
+    """Remove a subscription (e.g. user turned notifications off)."""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        from agent.models import PushSubscription
+        endpoint = request.data.get("endpoint")
+        if endpoint:
+            PushSubscription.objects.filter(
+                user=request.user, endpoint=endpoint).delete()
+        return Response({"status": "unsubscribed"})
+
+
+class PushTestView(APIView):
+    """Send a test notification to confirm the pipeline works end-to-end."""
+    permission_classes = [IsAuthenticated]
+
+    @method_decorator(ratelimit(key='user', rate='10/h', method='POST', block=True))
+    def post(self, request):
+        from agent.notifications import send_push
+        count = send_push(
+            request.user,
+            "Ash 🤖",
+            "Notifications are working — I'll ping you here.",
+            url="/",
+        )
+        if count == 0:
+            return Response(
+                {"error": "No devices subscribed or VAPID not configured."},
+                status=status.HTTP_400_BAD_REQUEST)
+        return Response({"status": "sent", "devices": count})
+
 
 class SpeakView(APIView):
     permission_classes = [IsAuthenticated]

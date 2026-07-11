@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { login, sendMessage, resetChat } from "./api";
+import { enablePush, pushSupported } from "./push";
 import ReactMarkdown from "react-markdown";
 import "./App.css";
 
@@ -50,6 +51,7 @@ export default function App() {
   const [error, setError] = useState("");
   const [activeMode, setActiveMode] = useState("chat");
   const [briefingLoading, setBriefingLoading] = useState(false);
+  const [notifOn, setNotifOn] = useState(false);
   const messagesEndRef = useRef(null);
 
   useEffect(() => {
@@ -63,6 +65,23 @@ export default function App() {
     }
   }
   }, [loggedIn]);
+
+  // If notifications were already granted, silently refresh the subscription
+  // on login so it stays valid on the server.
+  useEffect(() => {
+    if (loggedIn && pushSupported() && Notification.permission === "granted") {
+      enablePush().then(() => setNotifOn(true)).catch(() => {});
+    }
+  }, [loggedIn]);
+
+  const handleEnableNotifications = async () => {
+    try {
+      await enablePush();
+      setNotifOn(true);
+    } catch (e) {
+      alert(e.message || "Could not enable notifications.");
+    }
+  };
 
   const fetchBriefing = async () => {
     setBriefingLoading(true);
@@ -192,6 +211,15 @@ export default function App() {
           </div>
         </div>
         <div className="header-right">
+          {pushSupported() && (
+            <button
+              onClick={handleEnableNotifications}
+              className="icon-btn"
+              title={notifOn ? "Notifications on" : "Enable notifications"}
+            >
+              <i className={`ti ${notifOn ? "ti-bell" : "ti-bell-plus"}`} aria-hidden="true" />
+            </button>
+          )}
           <button onClick={stopSpeaking} className="icon-btn" title="Stop speaking">
             <i className="ti ti-player-stop" aria-hidden="true" />
           </button>

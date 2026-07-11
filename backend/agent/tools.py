@@ -18,6 +18,13 @@ ALLOWED_COMMANDS = [
     "git", "ls", "pwd", "echo", "mkdir", "touch",
 ]
 
+# Single source of truth for the Groq model used by tool-side LLM calls
+# (assignment builder, trip planner). llama-3.3-70b-versatile is deprecated
+# (Groq decommission Aug 16, 2026); qwen needs reasoning_effort=none to avoid
+# leaking <think> blocks into generated documents.
+GROQ_MODEL = "qwen/qwen3.6-27b"
+GROQ_EXTRA = {"reasoning_effort": "none"}
+
 def run_command(command: str) -> dict:
     """Run a shell command safely."""
     parts = command.strip().split()
@@ -332,11 +339,11 @@ def build_assignment(user_id: int, topic: str, subject_type: str = "cs",
 
         # Step 2 — Generate outline
         outline_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=GROQ_MODEL,
             messages=[{
                 "role": "user",
                 "content": f"""Create a detailed outline for a {word_count} word {subject_type} assignment on: {topic}
-                
+
 Research context:
 {research_data[:2000]}
 
@@ -348,7 +355,8 @@ Generate a structured outline with:
 
 Return only the outline, no other text."""
             }],
-            max_tokens=1000
+            max_tokens=1000,
+            extra_body=GROQ_EXTRA
         )
         outline = outline_response.choices[0].message.content
 
@@ -358,7 +366,7 @@ Return only the outline, no other text."""
 
         # Step 3 — Write the full assignment section by section
         writing_response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=GROQ_MODEL,
             messages=[{
                 "role": "user",
                 "content": f"""Write a complete, well-researched {word_count} word academic assignment on: {topic}
@@ -381,7 +389,8 @@ Requirements:
 
 Write the complete assignment now:"""
             }],
-            max_tokens=4000
+            max_tokens=4000,
+            extra_body=GROQ_EXTRA
         )
 
         content = writing_response.choices[0].message.content
@@ -513,7 +522,7 @@ def plan_trip(user_id: int, destination: str, departure_date: str,
 
         # Generate full itinerary
         itinerary_response = client.chat.completions.create(
-            model="qwen/qwen3.6-27b",
+            model=GROQ_MODEL,
             messages=[{
                 "role": "user",
                 "content": f"""Create a detailed {duration}-day trip plan for {destination}.
@@ -562,7 +571,8 @@ Create a complete trip plan in Markdown with:
 
 Write the complete plan now:"""
             }],
-            max_tokens=4000
+            max_tokens=4000,
+            extra_body=GROQ_EXTRA
         )
 
         itinerary = itinerary_response.choices[0].message.content
@@ -604,8 +614,8 @@ Write the complete plan now:"""
 def add_scheduled_task(user_id: int, name: str, cron_schedule: str,
                        prompt: str, task_type: str = "chat") -> dict:
     """Schedule a recurring task. cron_schedule is standard 5-field cron
-    (min hour day month weekday), e.g. '0 8 * * *' for every day at 08:00 UTC.
-    `prompt` is the instruction Ash runs when it fires."""
+    (min hour day month weekday), e.g. '0 8 * * *' for every day at 08:00
+    Pakistan time (PKT). `prompt` is the instruction Ash runs when it fires."""
     try:
         from django.contrib.auth.models import User
         from agent.models import ScheduledTask
@@ -626,7 +636,7 @@ def add_scheduled_task(user_id: int, name: str, cron_schedule: str,
         )
         return {
             "success": True,
-            "output": f"Scheduled '{name}' (ID: {task.id}) — runs on cron '{cron_schedule}' (UTC).",
+            "output": f"Scheduled '{name}' (ID: {task.id}) — runs on cron '{cron_schedule}' (Pakistan time).",
         }
     except Exception as e:
         return {"success": False, "output": str(e)}
@@ -637,6 +647,7 @@ def list_scheduled_tasks(user_id: int) -> dict:
     try:
         from django.contrib.auth.models import User
         from agent.models import ScheduledTask
+        from django.utils import timezone
 
         user = User.objects.get(id=user_id)
         tasks = ScheduledTask.objects.filter(user=user)
@@ -646,7 +657,7 @@ def list_scheduled_tasks(user_id: int) -> dict:
         result = "Your scheduled tasks:\n\n"
         for t in tasks:
             state = "on" if t.enabled else "off"
-            last = t.last_run.strftime('%b %d %H:%M') if t.last_run else "never"
+            last = timezone.localtime(t.last_run).strftime('%b %d %H:%M') if t.last_run else "never"
             result += f"[{state}] {t.name} — cron '{t.cron_schedule}' (ID: {t.id})\n"
             result += f"   last run: {last} ({t.last_status})\n\n"
         return {"success": True, "output": result}

@@ -18,12 +18,19 @@ from django.utils import timezone
 
 
 def _is_due(cron_schedule: str, last_run, now) -> bool:
-    """True if the most recent cron fire time is newer than last_run."""
+    """True if the most recent cron fire time is newer than last_run.
+
+    Cron fields are interpreted in the project timezone (settings.TIME_ZONE,
+    Asia/Karachi) so "0 8 * * *" means 08:00 PKT. last_run is stored in UTC;
+    comparing two timezone-aware datetimes compares absolute instants, so the
+    mixed zones are fine.
+    """
     from croniter import croniter
 
     if not croniter.is_valid(cron_schedule):
         return False
-    prev_fire = croniter(cron_schedule, now).get_prev(type(now))
+    local_now = timezone.localtime(now)  # convert to settings.TIME_ZONE
+    prev_fire = croniter(cron_schedule, local_now).get_prev(type(local_now))
     return last_run is None or last_run < prev_fire
 
 
@@ -36,21 +43,29 @@ def _run_task(task) -> str:
 
     try:
         if action_type == "briefing":
-            prompt = (
-                "Give me a short, warm proactive check-in: greet me, note "
-                "anything time-sensitive you know about, and list my pending "
-                "tasks if any. Do not call tools."
-            )
+            # Use the real morning-briefing pipeline (live weather/news/tasks/
+            # memories), same as the /api/briefing/ endpoint.
+            from .briefing import generate_morning_briefing
+            reply = generate_morning_briefing(task.user)
+            notif_title = "Good morning ☀️"
         else:
             prompt = action.get("prompt") or action.get("message") or task.name
-
-        engine = AgentEngine(user=task.user)
-        reply = engine.chat(prompt)
+            engine = AgentEngine(user=task.user)
+            reply = engine.chat(prompt)
+            notif_title = task.name or "Ash 🤖"
 
         task.last_run = timezone.now()
         task.last_status = "ok"
         task.last_result = (reply or "")[:2000]
         task.save(update_fields=["last_run", "last_status", "last_result"])
+
+        # Push the result to the user's phone (no-op if they haven't subscribed).
+        try:
+            from .notifications import send_push
+            send_push(task.user, notif_title, reply or "", url="/")
+        except Exception:
+            pass
+
         return reply
     except Exception as e:
         task.last_run = timezone.now()
