@@ -111,29 +111,6 @@ class AutonomousDecision(models.Model):
         return f"{self.user.username} — {self.outcome} (risk: {self.risk_score})"
 
 
-class PushSubscription(models.Model):
-    """A browser Web Push subscription for a user's device.
-
-    One row per device/browser that has granted notification permission.
-    Populated by POST /api/push/subscribe/; pruned automatically when a push
-    returns 404/410 (expired)."""
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='push_subscriptions')
-    endpoint = models.CharField(max_length=512, unique=True)
-    p256dh = models.CharField(max_length=255)
-    auth = models.CharField(max_length=255)
-    user_agent = models.CharField(max_length=300, blank=True, default='')
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.user.username} — push ({self.endpoint[:40]}…)"
-
-    def as_subscription_info(self):
-        return {
-            "endpoint": self.endpoint,
-            "keys": {"p256dh": self.p256dh, "auth": self.auth},
-        }
-
-
 class ScheduledTask(models.Model):
     STATUS_CHOICES = [
         ('ok', 'Ok'),

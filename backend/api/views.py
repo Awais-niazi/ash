@@ -104,75 +104,23 @@ class MorningBriefingView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-class VapidKeyView(APIView):
-    """Expose the VAPID public key so the browser can subscribe."""
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        from django.conf import settings
-        return Response({"publicKey": settings.VAPID_PUBLIC_KEY})
-
-
-class PushSubscribeView(APIView):
-    """Store (or refresh) a browser's Web Push subscription."""
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        from agent.models import PushSubscription
-
-        sub = request.data.get("subscription") or request.data
-        endpoint = sub.get("endpoint")
-        keys = sub.get("keys", {})
-        p256dh = keys.get("p256dh")
-        auth = keys.get("auth")
-
-        if not (endpoint and p256dh and auth):
-            return Response({"error": "Invalid subscription"},
-                            status=status.HTTP_400_BAD_REQUEST)
-
-        PushSubscription.objects.update_or_create(
-            endpoint=endpoint,
-            defaults={
-                "user": request.user,
-                "p256dh": p256dh,
-                "auth": auth,
-                "user_agent": request.META.get("HTTP_USER_AGENT", "")[:300],
-            },
-        )
-        return Response({"status": "subscribed"}, status=status.HTTP_201_CREATED)
-
-
-class PushUnsubscribeView(APIView):
-    """Remove a subscription (e.g. user turned notifications off)."""
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        from agent.models import PushSubscription
-        endpoint = request.data.get("endpoint")
-        if endpoint:
-            PushSubscription.objects.filter(
-                user=request.user, endpoint=endpoint).delete()
-        return Response({"status": "unsubscribed"})
-
-
-class PushTestView(APIView):
-    """Send a test notification to confirm the pipeline works end-to-end."""
+class NotifyTestView(APIView):
+    """Send a test notification to Discord to confirm the pipeline works."""
     permission_classes = [IsAuthenticated]
 
     @method_decorator(ratelimit(key='user', rate='10/h', method='POST', block=True))
     def post(self, request):
-        from agent.notifications import send_push
-        count = send_push(
+        from agent.notifications import send_notification
+        ok = send_notification(
             request.user,
             "Ash 🤖",
             "Notifications are working — I'll ping you here.",
-            url="/",
         )
-        if count == 0:
+        if not ok:
             return Response(
-                {"error": "No devices subscribed or VAPID not configured."},
+                {"error": "DISCORD_WEBHOOK_URL not configured or Discord rejected it."},
                 status=status.HTTP_400_BAD_REQUEST)
-        return Response({"status": "sent", "devices": count})
+        return Response({"status": "sent"})
 
 
 class SpeakView(APIView):

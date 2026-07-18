@@ -79,12 +79,9 @@ REST_FRAMEWORK = {
     ),
 }
 
-# Web Push (VAPID). Generate once with scripts/gen_vapid_keys.py and put the
-# values in each machine's .env. The public key is safe to expose to the
-# browser; the private key must stay secret.
-VAPID_PUBLIC_KEY = os.getenv('VAPID_PUBLIC_KEY', '')
-VAPID_PRIVATE_KEY = os.getenv('VAPID_PRIVATE_KEY', '')
-VAPID_SUBJECT = os.getenv('VAPID_SUBJECT', 'mailto:awaisfaiz101@gmail.com')
+# Notifications are delivered to a private Discord channel via webhook.
+# Create one under: Channel → Edit → Integrations → Webhooks → New Webhook.
+DISCORD_WEBHOOK_URL = os.getenv('DISCORD_WEBHOOK_URL', '')
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://localhost:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://localhost:6379/1')
