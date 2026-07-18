@@ -271,6 +271,44 @@ def delete_task(task_id: int) -> dict:
         return {"success": False, "output": str(e)}
 
 
+def delete_all_tasks(user_id: int, status: str = None) -> dict:
+    """Delete ALL of a user's tasks in one reliable operation. Optionally filter
+    by status (pending/in_progress/completed/cancelled) to delete only those.
+    Returns the exact number deleted."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import Task
+        user = User.objects.get(id=user_id)
+        qs = Task.objects.filter(user=user)
+        if status:
+            qs = qs.filter(status=status)
+        count = qs.count()
+        qs.delete()
+        scope = f" {status}" if status else ""
+        if count == 0:
+            return {"success": True, "output": f"No{scope} tasks to delete."}
+        return {"success": True, "output": f"Deleted {count}{scope} task(s)."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
+def delete_all_scheduled_tasks(user_id: int) -> dict:
+    """Delete ALL of a user's scheduled tasks (recurring reminders) in one
+    reliable operation. Returns the exact number deleted."""
+    try:
+        from django.contrib.auth.models import User
+        from agent.models import ScheduledTask
+        user = User.objects.get(id=user_id)
+        qs = ScheduledTask.objects.filter(user=user)
+        count = qs.count()
+        qs.delete()
+        if count == 0:
+            return {"success": True, "output": "No scheduled tasks to delete."}
+        return {"success": True, "output": f"Deleted {count} scheduled task(s)."}
+    except Exception as e:
+        return {"success": False, "output": str(e)}
+
+
 def update_task(task_id: int, title: str = None, description: str = None, priority: str = None, status: str = None, deadline: str = None) -> dict:
     """Update an existing task."""
     try:

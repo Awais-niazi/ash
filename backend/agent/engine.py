@@ -38,7 +38,8 @@ You help the user execute tasks on their server including:
 - get_tasks(user_id, status): Get tasks (status: pending/completed/all)
 - add_task(user_id, title, description, priority, deadline): Add a new task. deadline may be a date "YYYY-MM-DD" or a date+time "YYYY-MM-DD HH:MM" in Pakistan time. For relative deadlines like "in 2 hours" or "tomorrow 6pm", compute the absolute date+time yourself using the current date/time given above
 - complete_task(task_id): Mark a task as completed
-- delete_task(task_id): Delete a task
+- delete_task(task_id): Delete a single task
+- delete_all_tasks(user_id, status): Delete ALL of the user's tasks in one operation (optional status filter: pending/completed). Use this — not repeated delete_task calls — when the user asks to clear/delete all their tasks
 - update_task(task_id, ...): Update an existing task
 - plan_trip(user_id, destination, departure_date, return_date, purpose): Plan a complete trip itinerary
 - get_trips(user_id): List all planned trips
@@ -59,7 +60,8 @@ You have access to the following tools:
 - organize_folder(path, by): Auto-sort a folder into ordered subfolders. by="type" groups into Images/Documents/Videos/Code/etc; by="date" groups into YYYY-MM folders
 - add_scheduled_task(user_id, name, cron_schedule, prompt): Schedule a recurring task. cron_schedule is 5-field cron in Pakistan time (PKT), e.g. "0 8 * * *" = every day 08:00 PKT. prompt is the short reminder/instruction Ash runs when it fires
 - list_scheduled_tasks(user_id): List all scheduled tasks
-- delete_scheduled_task(task_id): Delete a scheduled task
+- delete_scheduled_task(task_id): Delete a single scheduled task
+- delete_all_scheduled_tasks(user_id): Delete ALL of the user's scheduled tasks (recurring reminders) in one operation. Use this when the user asks to clear all reminders/scheduled tasks
 - toggle_scheduled_task(task_id, enabled): Turn a scheduled task on/off
 - notify(user_id, title, message): Send a SHORT push notification to the user's phone. Use it whenever you judge something is worth alerting them about — a reminder firing, a confirmation, a useful heads-up. Keep it to 1-2 lines. Don't use it for long content (weather/news dumps) or trivial chit-chat.
 - web_search(query): Search the web for current information
@@ -86,6 +88,7 @@ IMPORTANT RULES:
 - If the user is just chatting, asking questions, or giving you information, respond in plain text only.
 - Do NOT perform any actions unless directly instructed.
 - Always ask for approval before executing any task.
+- Deleting ALL tasks or ALL reminders is irreversible — always confirm with the user before calling delete_all_tasks or delete_all_scheduled_tasks, and report the exact count the tool returns (never claim a deletion you did not actually perform).
 - When in doubt, ask the user what they want instead of assuming.
 - Never create files, commit code, or run commands unless the user specifically asks.
 - If the user says something like okay, cool, good girl, thanks, just respond conversationally.
@@ -106,7 +109,8 @@ def classify_memory_type(key: str, value: str) -> str:
 
 
 def assess_risk(tool_name: str, args: dict) -> float:
-    high_risk = ["git_push", "run_command", "delete_scheduled_task"]
+    high_risk = ["git_push", "run_command", "delete_scheduled_task",
+                 "delete_all_tasks", "delete_all_scheduled_tasks"]
     medium_risk = [
         "git_commit", "git_create_branch", "write_file",
         "move_file", "rename_file", "organize_folder", "add_scheduled_task",
@@ -416,6 +420,7 @@ No other text, just JSON."""
             "add_task": tools.add_task,
             "complete_task": tools.complete_task,
             "delete_task": tools.delete_task,
+            "delete_all_tasks": tools.delete_all_tasks,
             "update_task": tools.update_task,
             "build_assignment": tools.build_assignment,
             "get_assignments": tools.get_assignments,
@@ -430,6 +435,7 @@ No other text, just JSON."""
             "add_scheduled_task": tools.add_scheduled_task,
             "list_scheduled_tasks": tools.list_scheduled_tasks,
             "delete_scheduled_task": tools.delete_scheduled_task,
+            "delete_all_scheduled_tasks": tools.delete_all_scheduled_tasks,
             "toggle_scheduled_task": tools.toggle_scheduled_task,
             "notify": tools.notify,
         }
