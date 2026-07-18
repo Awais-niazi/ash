@@ -25,6 +25,25 @@ ALLOWED_COMMANDS = [
 GROQ_MODEL = "qwen/qwen3.6-27b"
 GROQ_EXTRA = {"reasoning_effort": "none"}
 
+
+def _parse_deadline(deadline):
+    """Parse a deadline string into an aware datetime (in the project timezone).
+
+    Accepts date-only ('2026-07-18') and date+time ('2026-07-18 14:30',
+    '2026-07-18T14:30'). Returns None if empty or unparseable.
+    """
+    if not deadline:
+        return None
+    from django.utils import timezone as tz
+    from datetime import datetime
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%dT%H:%M",
+                "%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S", "%Y-%m-%d"):
+        try:
+            return tz.make_aware(datetime.strptime(deadline.strip(), fmt))
+        except ValueError:
+            continue
+    return None
+
 def run_command(command: str) -> dict:
     """Run a shell command safely."""
     parts = command.strip().split()
@@ -202,15 +221,7 @@ def add_task(user_id: int, title: str, description: str = "", priority: str = "m
 
         user = User.objects.get(id=user_id)
 
-        deadline_dt = None
-        if deadline:
-            try:
-                deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
-                from django.utils import timezone as tz
-                import pytz
-                deadline_dt = tz.make_aware(deadline_dt)
-            except ValueError:
-                pass
+        deadline_dt = _parse_deadline(deadline)
 
         task = Task.objects.create(
             user=user,
@@ -280,13 +291,10 @@ def update_task(task_id: int, title: str = None, description: str = None, priori
             if status == 'completed':
                 task.completed_at = timezone.now()
         if deadline:
-            try:
-                deadline_dt = datetime.strptime(deadline, "%Y-%m-%d")
-                from django.utils import timezone as tz
-                task.deadline = tz.make_aware(deadline_dt)
+            parsed = _parse_deadline(deadline)
+            if parsed:
+                task.deadline = parsed
                 task.deadline_notified = False  # re-alert for the new deadline
-            except ValueError:
-                pass
 
         task.save()
         return {"success": True, "output": f"Task '{task.title}' updated successfully."}

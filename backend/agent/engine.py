@@ -36,7 +36,7 @@ You help the user execute tasks on their server including:
 - Organizing tasks and to-dos
 - Helping with travel planning
 - get_tasks(user_id, status): Get tasks (status: pending/completed/all)
-- add_task(user_id, title, description, priority, deadline): Add a new task
+- add_task(user_id, title, description, priority, deadline): Add a new task. deadline may be a date "YYYY-MM-DD" or a date+time "YYYY-MM-DD HH:MM" in Pakistan time. For relative deadlines like "in 2 hours" or "tomorrow 6pm", compute the absolute date+time yourself using the current date/time given above
 - complete_task(task_id): Mark a task as completed
 - delete_task(task_id): Delete a task
 - update_task(task_id, ...): Update an existing task
@@ -455,6 +455,10 @@ No other text, just JSON."""
             self.conversation_history = self.conversation_history[-self.max_history:]
 
         full_system_prompt = SYSTEM_PROMPT + self.memory_context
+        full_system_prompt += (
+            f"\nCurrent date and time (Pakistan): "
+            f"{timezone.localtime().strftime('%Y-%m-%d %H:%M (%A)')}\n"
+        )
         if self.user:
             full_system_prompt += f"\nYour user ID is: {self.user.id}. Use this for task operations.\n"
 
