@@ -22,7 +22,7 @@ ALLOWED_COMMANDS = [
 # (assignment builder, trip planner). llama-3.3-70b-versatile is deprecated
 # (Groq decommission Aug 16, 2026); qwen needs reasoning_effort=none to avoid
 # leaking <think> blocks into generated documents.
-GROQ_MODEL = "qwen/qwen3.6-27b"
+GROQ_MODEL = "qwen/qwen3.8-27b"
 GROQ_EXTRA = {"reasoning_effort": "none"}
 
 

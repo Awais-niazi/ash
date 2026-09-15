@@ -79,7 +79,7 @@ chat also injects the current PKT date/time into the system prompt so Ash can tu
 ## 7. Model (supersedes §9 note)
 
 `build_assignment` no longer uses the deprecated `llama-3.3-70b-versatile`. All
-tool-side Groq calls use a single `GROQ_MODEL` constant (`qwen/qwen3.6-27b`) with
+tool-side Groq calls use a single `GROQ_MODEL` constant (`qwen/qwen3.8-27b`) with
 `reasoning_effort=none`. Task deadlines now parse both `YYYY-MM-DD` and
 `YYYY-MM-DD HH:MM`.
 

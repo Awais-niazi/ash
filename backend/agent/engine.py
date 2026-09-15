@@ -8,7 +8,12 @@ from . import tools
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=4)
+
+# Context sent per LLM call, sized for Groq on_demand limits (~7k input tokens/min).
+HISTORY_BUDGET_CHARS = 5000
+SUMMARY_BUDGET_CHARS = 2500
+MESSAGE_CLIP_CHARS = 2000
 
 PERSONALITY_FILE = os.path.join(os.path.dirname(__file__), "personality.json")
 
@@ -125,7 +130,7 @@ def assess_risk(tool_name: str, args: dict) -> float:
 
 class AgentEngine:
     def __init__(self, user=None):
-        self.model = "qwen/qwen3.6-27b"
+        self.model = "qwen/qwen3.8-27b"
         self.conversation_history = []
         self.max_history = 20
         self.user = user
@@ -168,6 +173,21 @@ class AgentEngine:
                     m.reinforce(0.02)
         except Exception:
             self.memory_context = ""
+
+    def _history_for_llm(self, budget_chars: int = HISTORY_BUDGET_CHARS) -> list:
+        """Newest-first slice of conversation_history that fits budget_chars.
+        Groq's on_demand tier caps input at ~7k tokens/min, so we only resend
+        recent context and clip oversized messages (e.g. long tool results)."""
+        picked, used = [], 0
+        for m in reversed(self.conversation_history):
+            content = m.get("content") or ""
+            if len(content) > MESSAGE_CLIP_CHARS:
+                content = content[:MESSAGE_CLIP_CHARS] + " …[truncated]"
+            if picked and used + len(content) > budget_chars:
+                break
+            picked.append({**m, "content": content})
+            used += len(content)
+        return list(reversed(picked))
 
     def _load_last_conversation(self):
         try:
@@ -305,7 +325,7 @@ No other text, just JSON."""
                 model=self.model,
                 messages=[
                     {"role": "system", "content": summary_prompt},
-                    *self.conversation_history[-10:]
+                    *self._history_for_llm(SUMMARY_BUDGET_CHARS)
                 ],
                 max_tokens=500,
                 extra_body={"reasoning_effort": "none"}
@@ -365,7 +385,7 @@ No other text, just JSON."""
                 model=self.model,
                 messages=[
                     {"role": "system", "content": summary_prompt},
-                    *self.conversation_history[-6:]
+                    *self._history_for_llm(SUMMARY_BUDGET_CHARS)
                 ],
                 max_tokens=500,
                 extra_body={"reasoning_effort": "none"}
@@ -473,7 +493,7 @@ No other text, just JSON."""
                 model=self.model,
                 messages=[
                     {"role": "system", "content": full_system_prompt},
-                    *self.conversation_history
+                    *self._history_for_llm()
                 ],
                 extra_body={"reasoning_effort": "none"}
             )
