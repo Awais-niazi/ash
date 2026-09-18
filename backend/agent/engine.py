@@ -118,6 +118,7 @@ Facts about yourself you must never get wrong, and must never contradict:
 - Your memories are plain rows of key-value facts, extracted by trigger phrases and by a summarizing model. They are NOT embeddings and NOT a vector database.
 - Vectors and semantic search are used for exactly one thing: your own self-knowledge document.
 - You are NOT fully local and must never say that data stays only on this machine. Every message, your conversation history, your system prompt and your memories are sent to Groq, where the model that writes your replies runs. Tavily receives searches, Google Text-to-Speech receives spoken replies, Discord receives notifications. Your storage is local; your thinking is not.
+- You run on THREE models, one per job, not one: qwen/qwen3.8-27b for conversation and tools, openai/gpt-oss-20b for memory extraction, openai/gpt-oss-120b for assignments and itineraries.
 - Overwriting a memory replaces the old value outright. There is no archive, no "inactive" state, and no undo.
 """
 
@@ -249,12 +250,16 @@ class AgentEngine:
         r"tool|tools|function|code|codebase|architecture|built|build|made|design|"
         r"work|works|working|run|runs|running|server|laptop|local|cloud|privacy|"
         r"private|data|file|files|sandbox|guardrail|permission|cron|schedule|"
-        r"scheduler|reminder|deadline|notification|discord|log|logs|error|fail|"
+        r"schedul\w*|reminder|deadline|notification|discord|log|logs|error|fail|"
+        r"crash\w*|stuck|stopp?\w*|hang\w*|firing|freeze|frozen|"
         r"failing|broken|break|bug|truncat|cut off|slow|restart|version|update|"
-        r"config|setting|api|endpoint|backend|frontend|django|react)\b",
+        r"config|setting|api|endpoint|backend|frontend|django|react)s?\b",
         re.I,
     )
-    _SECOND_PERSON = re.compile(r"\b(you|your|yourself|yours|ash)\b", re.I)
+    _SECOND_PERSON = re.compile(r"\b(you|your|yourself|yours|ash|aisha)\b", re.I)
+    _INTERROGATIVE = re.compile(
+        r"^(how|what|which|why|where|when|who|do|does|did|is|are|can|could|"
+        r"should|would|will)\b", re.I)
 
     def _self_context(self, message: str) -> str:
         """Documentation about herself, retrieved for self-referential questions.
@@ -264,8 +269,14 @@ class AgentEngine:
         from imagination instead. Retrieval for these questions is therefore
         automatic rather than her choice.
         """
+        # Either "how do YOU store memories" or a bare question about her
+        # internals — "which model handles my assignments" names neither her
+        # nor you, and without context she invents an answer. Over-retrieving
+        # costs tokens; under-retrieving costs the truth.
+        if not self._SELF_TOPICS.search(message):
+            return ""
         if not (self._SECOND_PERSON.search(message)
-                and self._SELF_TOPICS.search(message)):
+                or self._INTERROGATIVE.match(message.strip())):
             return ""
         try:
             from .knowledge import search
@@ -585,14 +596,23 @@ No other text, just JSON."""
         )
         if self.user:
             full_system_prompt += f"\nYour user ID is: {self.user.id}. Use this for task operations.\n"
-        full_system_prompt += self._self_context(user_message)
+        self_context = self._self_context(user_message)
 
         for _ in range(5):
+            turns = self._history_for_llm()
+            # Documentation reads best immediately before the question it
+            # answers. In the system prompt it sat a hundred lines above, and
+            # she talked past it — reading "the conversation role stays on
+            # qwen" and concluding she runs on one model.
+            if self_context and turns and turns[-1]["role"] == "user":
+                turns[-1] = dict(turns[-1])
+                turns[-1]["content"] = self_context + "\n\n" + turns[-1]["content"]
+
             response = complete(
                 "conversation",
                 [
                     {"role": "system", "content": full_system_prompt},
-                    *self._history_for_llm()
+                    *turns
                 ],
                 max_tokens=MAX_REPLY_TOKENS,
             )
