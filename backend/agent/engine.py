@@ -11,6 +11,11 @@ load_dotenv()
 client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=4)
 
 # Context sent per LLM call, sized for Groq on_demand limits (~7k input tokens/min).
+# Cap the reply length explicitly. Without max_tokens, Groq estimates the
+# expected output, and on the free tier that estimate blows past the 1k
+# output-tokens/min ceiling — the request is either refused or the reply is
+# clamped to whatever is left in the minute, which cuts Ash off mid-sentence.
+MAX_REPLY_TOKENS = 400
 HISTORY_BUDGET_CHARS = 5000
 SUMMARY_BUDGET_CHARS = 2500
 MESSAGE_CLIP_CHARS = 2000
@@ -174,6 +179,23 @@ class AgentEngine:
         except Exception:
             self.memory_context = ""
 
+    @staticmethod
+    def _looks_truncated(content: str) -> bool:
+        """True if an assistant turn was cut off mid-sentence.
+
+        Replies clamped by the provider's output limit get stored like any
+        other, and once a few sit in the history the model copies the pattern
+        and answers in fragments. We keep the rows but leave them out of the
+        context we resend. Anything ending in terminal punctuation, a quote or
+        a non-ASCII character (Ash signs off with emoji) counts as finished.
+        """
+        text = (content or "").rstrip()
+        if not text:
+            return True
+        if '"tool"' in text:  # tool calls end on a brace by design
+            return False
+        return not (text[-1] in '.!?…:)"\'»”' or ord(text[-1]) > 127)
+
     def _history_for_llm(self, budget_chars: int = HISTORY_BUDGET_CHARS) -> list:
         """Newest-first slice of conversation_history that fits budget_chars.
         Groq's on_demand tier caps input at ~7k tokens/min, so we only resend
@@ -181,13 +203,25 @@ class AgentEngine:
         picked, used = [], 0
         for m in reversed(self.conversation_history):
             content = m.get("content") or ""
+            if m.get("role") == "assistant" and self._looks_truncated(content):
+                continue
             if len(content) > MESSAGE_CLIP_CHARS:
                 content = content[:MESSAGE_CLIP_CHARS] + " …[truncated]"
             if picked and used + len(content) > budget_chars:
                 break
             picked.append({**m, "content": content})
             used += len(content)
-        return list(reversed(picked))
+
+        # Dropping a truncated reply can leave two user turns adjacent, and a
+        # transcript that stops alternating makes the model answer in
+        # fragments. Merge same-role neighbours back into one turn.
+        merged = []
+        for m in reversed(picked):
+            if merged and merged[-1]["role"] == m["role"]:
+                merged[-1]["content"] += "\n" + m["content"]
+            else:
+                merged.append(dict(m))
+        return merged
 
     def _load_last_conversation(self):
         try:
@@ -495,6 +529,7 @@ No other text, just JSON."""
                     {"role": "system", "content": full_system_prompt},
                     *self._history_for_llm()
                 ],
+                max_tokens=MAX_REPLY_TOKENS,
                 extra_body={"reasoning_effort": "none"}
             )
 
