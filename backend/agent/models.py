@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from pgvector.django import VectorField
 from django.utils import timezone
 
 
@@ -247,3 +248,22 @@ class Trip(models.Model):
 
     def __str__(self):
         return f"{self.user.username} — {self.destination} ({self.departure_date})"    
+
+class SelfChunk(models.Model):
+    """A chunk of Ash's self-knowledge document, with its embedding.
+
+    Written only by `manage.py index_self`; read by the search_self tool.
+    """
+    source = models.CharField(max_length=255, default="ASH_SELF.md")
+    heading = models.CharField(max_length=500)
+    ordinal = models.IntegerField(default=0)
+    content = models.TextField()
+    embedding = VectorField(dimensions=384)
+    indexed_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['source', 'ordinal']
+        unique_together = ('source', 'ordinal')
+
+    def __str__(self):
+        return f"{self.source} #{self.ordinal} — {self.heading}"

@@ -772,3 +772,25 @@ def get_trips(user_id: int) -> dict:
         return {"success": True, "output": result}
     except Exception as e:
         return {"success": False, "output": str(e)}    
+
+def search_self(query: str, k: int = 4) -> dict:
+    """Look up how Ash herself works, from her own documentation.
+
+    Retrieves the nearest chunks of docs/ASH_SELF.md by meaning, so she answers
+    questions about her architecture, configuration and failure modes from what
+    is written down rather than from the model's guesses.
+    """
+    try:
+        from agent.knowledge import search
+
+        hits = search(query, k=k)
+        if not hits:
+            return {"success": False,
+                    "output": "Nothing indexed yet — run manage.py index_self."}
+
+        out = f"From my own documentation, on '{query}':\n\n"
+        for h in hits:
+            out += f"## {h['heading']} (match {h['similarity']})\n{h['content']}\n\n"
+        return {"success": True, "output": out.strip()}
+    except Exception as e:
+        return {"success": False, "output": f"Self-knowledge lookup failed: {e}"}

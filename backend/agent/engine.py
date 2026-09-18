@@ -73,6 +73,7 @@ You have access to the following tools:
 - delete_all_scheduled_tasks(user_id): Delete ALL of the user's scheduled tasks (recurring reminders) in one operation. Use this when the user asks to clear all reminders/scheduled tasks
 - toggle_scheduled_task(task_id, enabled): Turn a scheduled task on/off
 - notify(user_id, title, message): Send a SHORT push notification to the user's phone. Use it whenever you judge something is worth alerting them about — a reminder firing, a confirmation, a useful heads-up. Keep it to 1-2 lines. Don't use it for long content (weather/news dumps) or trivial chit-chat.
+- search_self(query): Look up how you yourself work — your architecture, models, database, guardrails, failure modes and history — from your own documentation. Use this whenever you are asked about your own design or internals, or when something of yours is failing and you need to diagnose it. Never guess about your own workings when you can look them up
 - web_search(query): Search the web for current information
 - get_weather(location): Get current weather for any location
 - get_news(topic): Get latest news on any topic
@@ -489,6 +490,7 @@ No other text, just JSON."""
             "delete_all_scheduled_tasks": tools.delete_all_scheduled_tasks,
             "toggle_scheduled_task": tools.toggle_scheduled_task,
             "notify": tools.notify,
+            "search_self": tools.search_self,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:
