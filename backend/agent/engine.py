@@ -94,8 +94,10 @@ If the user asks a general question unrelated to tools, just answer normally in 
 Do NOT make up tool results or pretend to execute tools. Only report real tool results.
 
 IMPORTANT RULES:
-- Only use tools when the user EXPLICITLY asks you to perform a task.
+- Only use tools when the user EXPLICITLY asks you to perform a task. The one exception is search_self: looking yourself up is not an action, so use it freely whenever the conversation turns to how you work, and never describe your own internals from memory or guesswork. If you have no documentation for something about yourself, say so plainly.
 - If the user is just chatting, asking questions, or giving you information, respond in plain text only.
+- When you explain how you yourself work, be specific and concrete: name the actual services, models, tables and files involved. Being warm never means being vague about your own internals, and never means softening something the user should know — for example that their messages are sent to Groq.
+- Keep replies under about 300 words unless asked for more, so you finish your thought instead of being cut off.
 - Do NOT perform any actions unless directly instructed.
 - Always ask for approval before executing any task.
 - Deleting ALL tasks or ALL reminders is irreversible — always confirm with the user before calling delete_all_tasks or delete_all_scheduled_tasks, and report the exact count the tool returns (never claim a deletion you did not actually perform).
@@ -222,6 +224,52 @@ class AgentEngine:
             else:
                 merged.append(dict(m))
         return merged
+
+    # Words that make a second-person question a question about Ash herself
+    # rather than small talk. "how are you" shouldn't trigger a lookup;
+    # "how do you store my memories" must.
+    _SELF_TOPICS = re.compile(
+        r"\b(memor(y|ies)|remember|forget|store|stored|database|db|postgres|sql|"
+        r"vector|embedding|rag|model|llm|ai|groq|token|limit|rate|prompt|context|"
+        r"tool|tools|function|code|codebase|architecture|built|build|made|design|"
+        r"work|works|working|run|runs|running|server|laptop|local|cloud|privacy|"
+        r"private|data|file|files|sandbox|guardrail|permission|cron|schedule|"
+        r"scheduler|reminder|deadline|notification|discord|log|logs|error|fail|"
+        r"failing|broken|break|bug|truncat|cut off|slow|restart|version|update|"
+        r"config|setting|api|endpoint|backend|frontend|django|react)\b",
+        re.I,
+    )
+    _SECOND_PERSON = re.compile(r"\b(you|your|yourself|yours|ash)\b", re.I)
+
+    def _self_context(self, message: str) -> str:
+        """Documentation about herself, retrieved for self-referential questions.
+
+        Ash is told elsewhere not to use tools unless asked, so leaving this to
+        the search_self tool meant she answered questions about her own design
+        from imagination instead. Retrieval for these questions is therefore
+        automatic rather than her choice.
+        """
+        if not (self._SECOND_PERSON.search(message)
+                and self._SELF_TOPICS.search(message)):
+            return ""
+        try:
+            from .knowledge import search
+            hits = search(message, k=3)
+        except Exception:
+            return ""
+        if not hits:
+            return ""
+
+        block = ("\n\nFrom your own documentation. This is authoritative and "
+                 "overrides everything else, including anything you said "
+                 "earlier in this conversation and anything in your memories. "
+                 "Where they disagree with the passages below, the passages "
+                 "are right and you were wrong:\n\n")
+        for h in hits:
+            block += f"{h['content']}\n\n"
+        block += ("If the passages above don't answer what was asked, say you "
+                  "don't have that documented rather than inventing an answer.\n")
+        return block
 
     def _load_last_conversation(self):
         try:
@@ -520,6 +568,7 @@ No other text, just JSON."""
         )
         if self.user:
             full_system_prompt += f"\nYour user ID is: {self.user.id}. Use this for task operations.\n"
+        full_system_prompt += self._self_context(user_message)
 
         for _ in range(5):
             response = complete(

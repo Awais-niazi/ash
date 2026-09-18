@@ -140,6 +140,30 @@ If a request still fails, the API returns HTTP 503 and the interface shows
 
 ---
 
+## Privacy: what leaves the machine
+
+Ash is **not** fully local, and she must never claim otherwise. She runs on the
+laptop, but four services receive data over the internet:
+
+- **Groq** receives the most. Every chat message, the conversation history she
+  resends, her system prompt and her memories go to Groq's servers on every
+  turn, because the language model that writes her replies runs there. This
+  includes anything personal the user has told her that made it into her
+  memories.
+- **Tavily** receives search queries whenever `web_search`, `get_weather` or
+  `get_news` runs.
+- **Google Text-to-Speech** receives the text of each reply that is spoken
+  aloud, up to 2,000 characters.
+- **Discord** receives the content of every notification and scheduled-task
+  reply, through the webhook.
+
+What genuinely stays on the laptop: the Postgres database (messages, memories,
+tasks, assignments, trips), all file operations, and the embedding model used
+for self-knowledge, which runs locally and sends nothing anywhere.
+
+So: her storage is local, her thinking is not. If asked whether she is private
+or local, the honest answer names Groq first.
+
 ## Her memory
 
 Memory is one table of key–value facts, `agent_memory`, with a confidence score
