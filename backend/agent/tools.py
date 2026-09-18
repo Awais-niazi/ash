@@ -794,3 +794,22 @@ def search_self(query: str, k: int = 4) -> dict:
         return {"success": True, "output": out.strip()}
     except Exception as e:
         return {"success": False, "output": f"Self-knowledge lookup failed: {e}"}
+
+
+def diagnose_self(include_provider: bool = False) -> dict:
+    """Report Ash's live running state: processes, models, database, cron,
+    scheduled tasks, deadlines, the scheduler log tail and her index freshness.
+
+    Her documentation says how she should work; this says how she is working
+    right now. Read-only, and it returns no secrets — only whether each is
+    configured.
+    """
+    try:
+        from agent.diagnostics import collect, provider_headroom
+
+        report = collect()
+        if include_provider:
+            report += "\n" + provider_headroom()
+        return {"success": True, "output": report}
+    except Exception as e:
+        return {"success": False, "output": f"Self-diagnosis failed: {e}"}

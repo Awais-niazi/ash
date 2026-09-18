@@ -194,7 +194,7 @@ type is guessed from the key by `classify_memory_type` in `agent/engine.py`.
 
 ## Her tools
 
-Ash has 33 tools. She calls one by emitting a bare JSON object in her reply, for
+Ash has 34 tools. She calls one by emitting a bare JSON object in her reply, for
 example `{"tool": "get_tasks", "args": {"user_id": 1, "status": "pending"}}`.
 The engine parses it, scores its risk, writes a row to `agent_autonomousdecision`,
 runs the function, and feeds the output back as the next turn. Tool
@@ -214,6 +214,7 @@ implementations live in `agent/tools.py` and `agent/filesystem.py`; the name-to
   `plan_trip`, `get_trips`
 - **Alerts:** `notify` — posts to Discord
 - **Self-knowledge:** `search_self` — retrieves from this document
+- **Self-inspection:** `diagnose_self` — reports her live running state
 
 Risk scores are recorded but never enforced: 0.8 for destructive actions such as
 `git_push`, `run_command` and the bulk deletes, 0.5 for writes, 0.2 otherwise.
@@ -309,6 +310,36 @@ never parses the PDF.
 
 ---
 
+## Inspecting her own live state
+
+`search_self` tells Ash how she is *supposed* to work. `diagnose_self` tells
+her how she is *actually* running at this moment. Diagnosis needs both: the
+document says "check whether the task is enabled and when it last ran", the
+live report says it is enabled and last ran three days ago.
+
+`diagnose_self` returns, in one call:
+
+- whether the backend (port 8000) and frontend (port 5173) are up
+- which model each role is using, and her current reply and history budgets
+- whether the Groq, Tavily and Discord credentials are configured — never
+  their values
+- whether the database is reachable and writable, with row counts
+- her cron entries, straight from `crontab -l`
+- every scheduled task: its cron line, whether it is enabled, when it last
+  ran and with what status
+- overdue deadlines and deadlines inside 24 hours
+- the tail of `backend/logs/scheduler.log`, and how long ago it was written
+- whether her self-knowledge index is stale — that is, whether the document
+  has changed since it was last indexed
+- optionally, with `include_provider`, her remaining rate-limit allowance
+
+It is read-only. It runs no command that can change anything, and returns no
+secret.
+
+**She cannot run `crontab` herself.** `run_command` allows only `git`, `ls`,
+`pwd`, `echo`, `mkdir` and `touch`, so offering to run `crontab -l` is a
+promise she cannot keep. `diagnose_self` is how she reads her cron entries.
+
 ## Failure modes and how to fix them
 
 This section exists so Ash can diagnose herself. Each entry is a symptom, its
@@ -354,7 +385,11 @@ which Ash cannot run herself; she must ask Awais to run
 
 ### Scheduled reminders never fire
 
-Check `crontab -l` for the `run_scheduled` entry, then read
+Call `diagnose_self` first — it shows whether any scheduled tasks exist at
+all (if none do, nothing can fire), whether each is enabled, when each last
+ran, whether the cron entries are present, and what the scheduler log says.
+Only then reason about causes: check `crontab -l` for the `run_scheduled`
+entry, then read
 `backend/logs/scheduler.log`. Common causes: the cron line is in UTC thinking
 rather than Pakistan time, the task is disabled, or the virtualenv path in the
 cron entry is wrong. Cron runs with a bare environment, so paths must be

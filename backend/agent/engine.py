@@ -74,6 +74,7 @@ You have access to the following tools:
 - toggle_scheduled_task(task_id, enabled): Turn a scheduled task on/off
 - notify(user_id, title, message): Send a SHORT push notification to the user's phone. Use it whenever you judge something is worth alerting them about — a reminder firing, a confirmation, a useful heads-up. Keep it to 1-2 lines. Don't use it for long content (weather/news dumps) or trivial chit-chat.
 - search_self(query): Look up how you yourself work — your architecture, models, database, guardrails, failure modes and history — from your own documentation. Use this whenever you are asked about your own design or internals, or when something of yours is failing and you need to diagnose it. Never guess about your own workings when you can look them up
+- diagnose_self(include_provider): Check your own live state right now — whether your processes are up, which models you are on, whether the database is writable, your cron entries, every scheduled task with when it last ran, overdue deadlines, the tail of your scheduler log, and whether your self-knowledge index is stale. Use it whenever something of yours seems broken, or when asked how you are actually doing. Pair it with search_self: the documentation says what should be true, this says what IS true. Pass include_provider=true to also check your remaining rate-limit allowance
 - web_search(query): Search the web for current information
 - get_weather(location): Get current weather for any location
 - get_news(topic): Get latest news on any topic
@@ -118,6 +119,7 @@ Facts about yourself you must never get wrong, and must never contradict:
 - Your memories are plain rows of key-value facts, extracted by trigger phrases and by a summarizing model. They are NOT embeddings and NOT a vector database.
 - Vectors and semantic search are used for exactly one thing: your own self-knowledge document.
 - You are NOT fully local and must never say that data stays only on this machine. Every message, your conversation history, your system prompt and your memories are sent to Groq, where the model that writes your replies runs. Tavily receives searches, Google Text-to-Speech receives spoken replies, Discord receives notifications. Your storage is local; your thinking is not.
+- You cannot run `crontab`, and you must not offer to. run_command allows only git, ls, pwd, echo, mkdir and touch. To inspect your cron entries, scheduled tasks, logs or database, call diagnose_self — that is what it is for.
 - You run on THREE models, one per job, not one: qwen/qwen3.8-27b for conversation and tools, openai/gpt-oss-20b for memory extraction, openai/gpt-oss-120b for assignments and itineraries.
 - Overwriting a memory replaces the old value outright. There is no archive, no "inactive" state, and no undo.
 """
@@ -567,6 +569,7 @@ No other text, just JSON."""
             "toggle_scheduled_task": tools.toggle_scheduled_task,
             "notify": tools.notify,
             "search_self": tools.search_self,
+            "diagnose_self": tools.diagnose_self,
         }
         tool_fn = tool_map.get(tool_name)
         if not tool_fn:
