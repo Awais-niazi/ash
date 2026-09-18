@@ -18,12 +18,10 @@ ALLOWED_COMMANDS = [
     "git", "ls", "pwd", "echo", "mkdir", "touch",
 ]
 
-# Single source of truth for the Groq model used by tool-side LLM calls
-# (assignment builder, trip planner). llama-3.3-70b-versatile is deprecated
-# (Groq decommission Aug 16, 2026); qwen needs reasoning_effort=none to avoid
-# leaking <think> blocks into generated documents.
-GROQ_MODEL = "qwen/qwen3.8-27b"
-GROQ_EXTRA = {"reasoning_effort": "none"}
+# Tool-side LLM calls (assignment builder, trip planner) run on the "longform"
+# role from agent/llm.py — a separate model, so their 4,000-token outputs draw
+# on their own rate-limit bucket instead of starving chat.
+from .llm import complete as _complete  # noqa: E402
 
 
 def _parse_deadline(deadline):
@@ -347,15 +345,12 @@ def build_assignment(user_id: int, topic: str, subject_type: str = "cs",
                      title: str = None) -> dict:
     """Autonomously research, outline and write a complete assignment."""
     try:
-        import os
-        from groq import Groq
         from django.contrib.auth.models import User
         from agent.models import Assignment, AssignmentDraft
         from django.utils import timezone
         from datetime import datetime
 
         user = User.objects.get(id=user_id)
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
         if not title:
             title = f"Assignment — {topic[:50]}"
@@ -385,9 +380,9 @@ def build_assignment(user_id: int, topic: str, subject_type: str = "cs",
         research_data = research.get('output', '')
 
         # Step 2 — Generate outline
-        outline_response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{
+        outline_response = _complete(
+            "longform",
+            [{
                 "role": "user",
                 "content": f"""Create a detailed outline for a {word_count} word {subject_type} assignment on: {topic}
 
@@ -403,7 +398,6 @@ Generate a structured outline with:
 Return only the outline, no other text."""
             }],
             max_tokens=1000,
-            extra_body=GROQ_EXTRA
         )
         outline = outline_response.choices[0].message.content
 
@@ -412,9 +406,9 @@ Return only the outline, no other text."""
         assignment.save()
 
         # Step 3 — Write the full assignment section by section
-        writing_response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{
+        writing_response = _complete(
+            "longform",
+            [{
                 "role": "user",
                 "content": f"""Write a complete, well-researched {word_count} word academic assignment on: {topic}
 
@@ -437,7 +431,6 @@ Requirements:
 Write the complete assignment now:"""
             }],
             max_tokens=4000,
-            extra_body=GROQ_EXTRA
         )
 
         content = writing_response.choices[0].message.content
@@ -533,15 +526,12 @@ def plan_trip(user_id: int, destination: str, departure_date: str,
               return_date: str, purpose: str = "leisure") -> dict:
     """Autonomously research and plan a complete trip itinerary."""
     try:
-        import os
-        from groq import Groq
         from django.contrib.auth.models import User
         from agent.models import Trip
         from django.utils import timezone
         from datetime import datetime
 
         user = User.objects.get(id=user_id)
-        client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
         # Parse dates
         dep_date = datetime.strptime(departure_date, "%Y-%m-%d").date()
@@ -568,9 +558,9 @@ def plan_trip(user_id: int, destination: str, departure_date: str,
         practical_data = practical.get('output', '')
 
         # Generate full itinerary
-        itinerary_response = client.chat.completions.create(
-            model=GROQ_MODEL,
-            messages=[{
+        itinerary_response = _complete(
+            "longform",
+            [{
                 "role": "user",
                 "content": f"""Create a detailed {duration}-day trip plan for {destination}.
 
@@ -619,7 +609,6 @@ Create a complete trip plan in Markdown with:
 Write the complete plan now:"""
             }],
             max_tokens=4000,
-            extra_body=GROQ_EXTRA
         )
 
         itinerary = itinerary_response.choices[0].message.content

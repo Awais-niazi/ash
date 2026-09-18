@@ -1,21 +1,20 @@
 import os
 import re
 import json
-from groq import Groq
 from dotenv import load_dotenv
 from django.utils import timezone
 from . import tools
+from .llm import client, complete, model_for
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY"), max_retries=4)
-
-# Context sent per LLM call, sized for Groq on_demand limits (~7k input tokens/min).
 # Cap the reply length explicitly. Without max_tokens, Groq estimates the
 # expected output, and on the free tier that estimate blows past the 1k
 # output-tokens/min ceiling — the request is either refused or the reply is
 # clamped to whatever is left in the minute, which cuts Ash off mid-sentence.
 MAX_REPLY_TOKENS = 400
+
+# Context sent per LLM call, sized for Groq on_demand limits (~7k input tokens/min).
 HISTORY_BUDGET_CHARS = 5000
 SUMMARY_BUDGET_CHARS = 2500
 MESSAGE_CLIP_CHARS = 2000
@@ -135,7 +134,7 @@ def assess_risk(tool_name: str, args: dict) -> float:
 
 class AgentEngine:
     def __init__(self, user=None):
-        self.model = "qwen/qwen3.8-27b"
+        self.model = model_for("conversation")
         self.conversation_history = []
         self.max_history = 20
         self.user = user
@@ -355,14 +354,13 @@ Return ONLY a JSON object like this:
 Only include genuinely useful facts. If nothing important, return {}.
 No other text, just JSON."""
 
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = complete(
+                "extraction",
+                [
                     {"role": "system", "content": summary_prompt},
                     *self._history_for_llm(SUMMARY_BUDGET_CHARS)
                 ],
                 max_tokens=500,
-                extra_body={"reasoning_effort": "none"}
             )
 
             raw = response.choices[0].message.content.strip()
@@ -415,14 +413,13 @@ Return ONLY a JSON object like this:
 Only include genuinely useful facts. If nothing important, return {}.  
 No other text, just JSON."""
             
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = complete(
+                "extraction",
+                [
                     {"role": "system", "content": summary_prompt},
                     *self._history_for_llm(SUMMARY_BUDGET_CHARS)
                 ],
                 max_tokens=500,
-                extra_body={"reasoning_effort": "none"}
             )
             raw = response.choices[0].message.content.strip()
             raw = re.sub(r"```json|```", "", raw).strip()
@@ -523,14 +520,13 @@ No other text, just JSON."""
             full_system_prompt += f"\nYour user ID is: {self.user.id}. Use this for task operations.\n"
 
         for _ in range(5):
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=[
+            response = complete(
+                "conversation",
+                [
                     {"role": "system", "content": full_system_prompt},
                     *self._history_for_llm()
                 ],
                 max_tokens=MAX_REPLY_TOKENS,
-                extra_body={"reasoning_effort": "none"}
             )
 
             reply = response.choices[0].message.content
